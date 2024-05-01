@@ -22,7 +22,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
-export const maxDuration:Number = parseInt(process.env.MAX_DURATION, 10) || 600 ; // 5 minutes
+export const maxDuration = 10 ; // 5 minutes
 
 export default async function Page({
 	params,
