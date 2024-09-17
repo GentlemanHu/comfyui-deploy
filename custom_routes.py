@@ -28,27 +28,27 @@ from aiohttp import web, ClientSession, ClientError, ClientTimeout
 import atexit
 
 # Global session
-client_session = None
+# client_session = None
 
 # def create_client_session():
 #     global client_session
 #     if client_session is None:
 #         client_session = aiohttp.ClientSession()
         
-async def ensure_client_session():
-    global client_session
-    if client_session is None:
-        client_session = aiohttp.ClientSession()
+# async def ensure_client_session():
+#     global client_session
+#     if client_session is None:
+#         client_session = aiohttp.ClientSession()
 
-async def cleanup():
-    global client_session
-    if client_session:
-        await client_session.close()
+# async def cleanup():
+#     global client_session
+#     if client_session:
+#         await client_session.close()
         
 def exit_handler():
     print("Exiting the application. Initiating cleanup...")
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(cleanup())
+    # loop = asyncio.get_event_loop()
+    # loop.run_until_complete(cleanup())
 
 atexit.register(exit_handler)
 
@@ -60,62 +60,63 @@ print(f"max_retries: {max_retries}, retry_delay_multiplier: {retry_delay_multipl
 import time
 
 async def async_request_with_retry(method, url, disable_timeout=False, token=None, **kwargs):
-    global client_session
-    await ensure_client_session()
-    retry_delay = 1  # Start with 1 second delay
-    initial_timeout = 5  # 5 seconds timeout for the initial connection
+    # global client_session
+    # await ensure_client_session()
+    async with aiohttp.ClientSession() as client_session:
+        retry_delay = 1  # Start with 1 second delay
+        initial_timeout = 5  # 5 seconds timeout for the initial connection
 
-    start_time = time.time()
-    for attempt in range(max_retries):
-        try:
-            if not disable_timeout:
-                timeout = ClientTimeout(total=None, connect=initial_timeout)
-                kwargs['timeout'] = timeout
+        start_time = time.time()
+        for attempt in range(max_retries):
+            try:
+                if not disable_timeout:
+                    timeout = ClientTimeout(total=None, connect=initial_timeout)
+                    kwargs['timeout'] = timeout
 
-            if token is not None:
-                if 'headers' not in kwargs:
-                    kwargs['headers'] = {}
-                kwargs['headers']['Authorization'] = f"Bearer {token}"
+                if token is not None:
+                    if 'headers' not in kwargs:
+                        kwargs['headers'] = {}
+                    kwargs['headers']['Authorization'] = f"Bearer {token}"
 
-            request_start = time.time()
-            async with client_session.request(method, url, **kwargs) as response:
-                request_end = time.time()
-                logger.info(f"Request attempt {attempt + 1} took {request_end - request_start:.2f} seconds")
+                request_start = time.time()
+                async with client_session.request(method, url, **kwargs) as response:
+                    request_end = time.time()
+                    logger.info(f"Request attempt {attempt + 1} took {request_end - request_start:.2f} seconds")
+                    
+                    if response.status != 200:
+                        error_body = await response.text()
+                        logger.error(f"Request failed with status {response.status} and body {error_body}")
+                        # raise Exception(f"Request failed with status {response.status}")
+                    
+                    response.raise_for_status()
+                    if method.upper() == 'GET':
+                        await response.read()
+                    
+                    total_time = time.time() - start_time
+                    logger.info(f"Request succeeded after {total_time:.2f} seconds (attempt {attempt + 1}/{max_retries})")
+                    return response
+            except asyncio.TimeoutError:
+                logger.warning(f"Request timed out after {initial_timeout} seconds (attempt {attempt + 1}/{max_retries})")
+            except ClientError as e:
+                end_time = time.time()
+                logger.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.error(f"Time taken for failed attempt: {end_time - request_start:.2f} seconds")
+                logger.error(f"Total time elapsed: {end_time - start_time:.2f} seconds")
                 
-                if response.status != 200:
-                    error_body = await response.text()
-                    logger.error(f"Request failed with status {response.status} and body {error_body}")
-                    # raise Exception(f"Request failed with status {response.status}")
+                # Log the response body for ClientError as well
+                if hasattr(e, 'response') and e.response is not None:
+                    error_body = await e.response.text()
+                    logger.error(f"Error response body: {error_body}")
                 
-                response.raise_for_status()
-                if method.upper() == 'GET':
-                    await response.read()
-                
-                total_time = time.time() - start_time
-                logger.info(f"Request succeeded after {total_time:.2f} seconds (attempt {attempt + 1}/{max_retries})")
-                return response
-        except asyncio.TimeoutError:
-            logger.warning(f"Request timed out after {initial_timeout} seconds (attempt {attempt + 1}/{max_retries})")
-        except ClientError as e:
-            end_time = time.time()
-            logger.error(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
-            logger.error(f"Time taken for failed attempt: {end_time - request_start:.2f} seconds")
-            logger.error(f"Total time elapsed: {end_time - start_time:.2f} seconds")
+                if attempt == max_retries - 1:
+                    logger.error(f"Request failed after {max_retries} attempts: {e}")
+                    raise
             
-            # Log the response body for ClientError as well
-            if hasattr(e, 'response') and e.response is not None:
-                error_body = await e.response.text()
-                logger.error(f"Error response body: {error_body}")
-            
-            if attempt == max_retries - 1:
-                logger.error(f"Request failed after {max_retries} attempts: {e}")
-                raise
-        
-        await asyncio.sleep(retry_delay)
-        retry_delay *= retry_delay_multiplier
+            await asyncio.sleep(retry_delay)
+            retry_delay *= retry_delay_multiplier
 
-    total_time = time.time() - start_time
-    raise Exception(f"Request failed after {max_retries} attempts and {total_time:.2f} seconds")
+        total_time = time.time() - start_time
+        raise Exception(f"Request failed after {max_retries} attempts and {total_time:.2f} seconds")
 
 from logging import basicConfig, getLogger
 
@@ -1338,7 +1339,7 @@ async def update_file_status(prompt_id: str, data, uploading, have_error=False, 
 
 async def handle_upload(prompt_id: str, data, key: str, content_type_key: str, default_content_type: str):
     items = data.get(key, [])
-    # upload_tasks = []
+    upload_tasks = []
 
     for item in items:
         # Skipping temp files
@@ -1354,25 +1355,17 @@ async def handle_upload(prompt_id: str, data, key: str, content_type_key: str, d
         elif file_extension == '.webp':
             file_type = 'image/webp'
 
-        # upload_tasks.append(upload_file(
-        #     prompt_id,
-        #     item.get("filename"),
-        #     subfolder=item.get("subfolder"),
-        #     type=item.get("type"),
-        #     content_type=file_type,
-        #     item=item
-        # ))
-        await upload_file(
+        upload_tasks.append(upload_file(
             prompt_id,
             item.get("filename"),
             subfolder=item.get("subfolder"),
             type=item.get("type"),
             content_type=file_type,
             item=item
-        )
+        ))
 
     # Execute all upload tasks concurrently
-    # await asyncio.gather(*upload_tasks)
+    await asyncio.gather(*upload_tasks)
 
 # Upload files in the background
 async def upload_in_background(prompt_id: str, data, node_id=None, have_upload=True, node_meta=None):
@@ -1415,7 +1408,6 @@ async def update_run_with_output(prompt_id, data, node_id=None, node_meta=None):
         "output_data": data,
         "node_meta": node_meta,
     }
-    pprint(body)
     have_upload_media = False
     if data is not None:
         have_upload_media = 'images' in data or 'files' in data or 'gifs' in data or 'mesh' in data
