@@ -24,7 +24,7 @@ from typing import Dict, List, Union, Any, Optional
 from PIL import Image
 import copy
 import struct
-from aiohttp import web, ClientSession, ClientError, ClientTimeout
+from aiohttp import web, ClientSession, ClientError, ClientTimeout, ClientResponseError
 import atexit
 
 # Global session
@@ -1199,6 +1199,47 @@ async def update_run(prompt_id: str, status: Status):
                 })
 
 
+async def file_sender(file_object, chunk_size):
+    while True:
+        chunk = await file_object.read(chunk_size)
+        if not chunk:
+            break
+        yield chunk
+        
+        
+chunk_size = 1024 * 1024  # 1MB chunks, adjust as needed
+
+async def upload_with_retry(session, url, headers, data, max_retries=3, initial_delay=1):
+    start_time = time.time()  # Start timing here
+    for attempt in range(max_retries):
+        try:
+            async with session.put(url, headers=headers, data=data) as response:
+                upload_duration = time.time() - start_time
+                logger.info(f"Upload attempt {attempt + 1} completed in {upload_duration:.2f} seconds")
+                logger.info(f"Upload response status: {response.status}")
+                
+                response.raise_for_status()  # This will raise an exception for 4xx and 5xx status codes
+                
+                response_text = await response.text()
+                logger.info(f"Response body: {response_text[:1000]}...")
+                
+                logger.info("Upload successful")
+                return response  # Successful upload, exit the retry loop
+                
+        except (ClientError, ClientResponseError) as e:
+            logger.error(f"Upload attempt {attempt + 1} failed: {str(e)}")
+            if attempt < max_retries - 1:  # If it's not the last attempt
+                delay = initial_delay * (2 ** attempt)  # Exponential backoff
+                logger.info(f"Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error("Max retries reached. Upload failed.")
+                raise  # Re-raise the last exception if all retries are exhausted
+        except Exception as e:
+            logger.error(f"Unexpected error during upload: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise  # Re-raise unexpected exceptions immediately
+
 async def upload_file(prompt_id, filename, subfolder=None, content_type="image/png", type="output", item=None):
     """
     Uploads file to S3 bucket using S3 client object
@@ -1234,42 +1275,55 @@ async def upload_file(prompt_id, filename, subfolder=None, content_type="image/p
     prompt_id = quote(prompt_id)
     content_type = quote(content_type)
 
+    target_url = f"{file_upload_endpoint}?file_name={filename}&run_id={prompt_id}&type={content_type}&version=v2"
+
+    start_time = time.time()  # Start timing here
+    logger.info(f"Target URL: {target_url}")
+    result = await async_request_with_retry("GET", target_url, disable_timeout=True, token=token)
+    end_time = time.time()  # End timing after the request is complete
+    logger.info("Time taken for getting file upload endpoint: {:.2f} seconds".format(end_time - start_time))
+    ok = await result.json()
+    
+    logger.info(f"Result: {ok}")
+
     async with aiofiles.open(file, 'rb') as f:
         data = await f.read()
         size = str(len(data))
-        target_url = f"{file_upload_endpoint}?file_name={filename}&run_id={prompt_id}&type={content_type}&version=v2"
-
-        start_time = time.time()  # Start timing here
-        logger.info(f"Target URL: {target_url}")
-        result = await async_request_with_retry("GET", target_url, disable_timeout=True, token=token)
-        end_time = time.time()  # End timing after the request is complete
-        logger.info("Time taken for getting file upload endpoint: {:.2f} seconds".format(end_time - start_time))
-        ok = await result.json()
+        # logger.info(f"Image size: {size}")
         
-        logger.info(f"Result: {ok}")
-
         start_time = time.time()  # Start timing here
         headers = {
             "Content-Type": content_type,
-            # "Content-Length": size,
+            "Content-Length": size,
         }
-        
+
+        logger.info(headers)
+
         if ok.get('include_acl') is True:
             headers["x-amz-acl"] = "public-read"
-        
+
         # response = requests.put(ok.get("url"), headers=headers, data=data)
-        response = await async_request_with_retry('PUT', ok.get("url"), headers=headers, data=data)
-        logger.info(f"Upload file response status: {response.status}, status text: {response.reason}")
+        # response = await async_request_with_retry('PUT', ok.get("url"), headers=headers, data=data)
+        # logger.info(f"Upload file response status: {response.status}, status text: {response.reason}")
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                response = await upload_with_retry(session, ok.get("url"), headers, data)
+                # Process successful response...
+            except Exception as e:
+                # Handle final failure...
+                logger.error(f"Upload ultimately failed: {str(e)}")
+
         end_time = time.time()  # End timing after the request is complete
         logger.info("Upload time: {:.2f} seconds".format(end_time - start_time))
-        
-        if item is not None:
-            file_download_url = ok.get("download_url")
-            if file_download_url is not None:
-                item["url"] = file_download_url
-            item["upload_duration"] = end_time - start_time
-            if ok.get("is_public") is not None:
-                item["is_public"] = ok.get("is_public")
+    
+    if item is not None:
+        file_download_url = ok.get("download_url")
+        if file_download_url is not None:
+            item["url"] = file_download_url
+        item["upload_duration"] = end_time - start_time
+        if ok.get("is_public") is not None:
+            item["is_public"] = ok.get("is_public")
 
 def have_pending_upload(prompt_id):
     if prompt_id in prompt_metadata and len(prompt_metadata[prompt_id].uploading_nodes) > 0:
@@ -1362,7 +1416,7 @@ async def update_file_status(prompt_id: str, data, uploading, have_error=False, 
 
 async def handle_upload(prompt_id: str, data, key: str, content_type_key: str, default_content_type: str):
     items = data.get(key, [])
-    # upload_tasks = []
+    upload_tasks = []
 
     for item in items:
         # Skipping temp files
@@ -1378,33 +1432,43 @@ async def handle_upload(prompt_id: str, data, key: str, content_type_key: str, d
         elif file_extension == '.webp':
             file_type = 'image/webp'
 
-        # upload_tasks.append(upload_file(
-        #     prompt_id,
-        #     item.get("filename"),
-        #     subfolder=item.get("subfolder"),
-        #     type=item.get("type"),
-        #     content_type=file_type,
-        #     item=item
-        # ))
-        await upload_file(
+        upload_tasks.append(upload_file(
             prompt_id,
             item.get("filename"),
             subfolder=item.get("subfolder"),
             type=item.get("type"),
             content_type=file_type,
             item=item
-        )
+        ))
+        # await upload_file(
+        #     prompt_id,
+        #     item.get("filename"),
+        #     subfolder=item.get("subfolder"),
+        #     type=item.get("type"),
+        #     content_type=file_type,
+        #     item=item
+        # )
 
     # Execute all upload tasks concurrently
-    # await asyncio.gather(*upload_tasks)
+    await asyncio.gather(*upload_tasks)
 
 # Upload files in the background
 async def upload_in_background(prompt_id: str, data, node_id=None, have_upload=True, node_meta=None):
     try:
-        await handle_upload(prompt_id, data, 'images', "content_type", "image/png")
-        await handle_upload(prompt_id, data, 'files', "content_type", "image/png")
-        await handle_upload(prompt_id, data, 'gifs', "format", "image/gif")
-        await handle_upload(prompt_id, data, 'mesh', "format", "application/octet-stream")
+        # await handle_upload(prompt_id, data, 'images', "content_type", "image/png")
+        # await handle_upload(prompt_id, data, 'files', "content_type", "image/png")
+        # await handle_upload(prompt_id, data, 'gifs', "format", "image/gif")
+        # await handle_upload(prompt_id, data, 'mesh', "format", "application/octet-stream")
+        upload_tasks = [
+            handle_upload(prompt_id, data, "images", "content_type", "image/png"),
+            handle_upload(prompt_id, data, "files", "content_type", "image/png"),
+            handle_upload(prompt_id, data, "gifs", "format", "image/gif"),
+            handle_upload(
+                prompt_id, data, "mesh", "format", "application/octet-stream"
+            ),
+        ]
+
+        await asyncio.gather(*upload_tasks)
 
         status_endpoint = prompt_metadata[prompt_id].status_endpoint
         token = prompt_metadata[prompt_id].token
