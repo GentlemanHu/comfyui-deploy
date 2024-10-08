@@ -395,7 +395,7 @@ async def comfy_deploy_run(request):
     # We proxy the request to Comfy Deploy, this is a native run
     if "is_native_run" in data:
         async with aiohttp.ClientSession() as session:
-            # pprint(data)
+            # # pprint(data)
             # headers = request.headers.copy()
             # headers['Content-Type'] = 'application/json'
             async with session.post(data.get("native_run_api_endpoint"), json=data, headers={
@@ -403,7 +403,7 @@ async def comfy_deploy_run(request):
                 'Authorization': request.headers.get('Authorization')
             }) as response:
                 data = await response.json()
-                # print(data)
+                # # print(data)
     
     if "cd_token" in data:
         token = data["cd_token"]
@@ -1002,20 +1002,10 @@ async def send_json_override(self, event, data, sid=None):
     target_sid = sid
     if target_sid == "comfy_deploy_instance":
         target_sid = None
+    
 
-
-
-    if prompt_id in comfy_message_queues:
-        comfy_message_queues[prompt_id].put_nowait({
-            "event": event,
-            "data": data
-        })
 
     asyncio.create_task(update_run_ws_event(prompt_id, event, data))
-    # event_emitter.emit("send_json", {
-    #     "event": event,
-    #     "data": data
-    # })
 
     if event == 'execution_start':
         await update_run(prompt_id, Status.RUNNING)
@@ -1054,7 +1044,7 @@ async def send_json_override(self, event, data, sid=None):
                 return
             prompt_metadata[prompt_id].last_updated_node = node
             class_type = prompt_metadata[prompt_id].workflow_api[node]['class_type']
-            logger.info(f"At: {round(calculated_progress * 100)}% - {class_type}")
+            logger.info(f"At: {round(round(calculated_progress * 100))}% - {class_type}")
             await send("live_status", {
                 "prompt_id": prompt_id,
                 "current_node": class_type,
@@ -1092,14 +1082,16 @@ async def send_json_override(self, event, data, sid=None):
                 return
             await update_run_with_output(prompt_id, data.get('output'), node_id=data.get('node'), node_meta=node_meta)
             logger.info(f"Executed {class_type} {data}")
+            await update_run_with_output(prompt_id, data.get('output'), node_id=data.get('node'), node_meta=node_meta)
+            logger.info(f"Executed {class_type} {data}")
         else:
             logger.info(f"Executed {data}")
-        
-    # now we send everything
-    await asyncio.wait([
-        asyncio.create_task(send(event, data, sid=target_sid)),
-        asyncio.create_task(self.send_json_original(event, data, sid))
-    ])
+            
+    if prompt_id in comfy_message_queues:
+        comfy_message_queues[prompt_id].put_nowait({
+            "event": event,
+            "data": data
+        })
 
 # Global variable to keep track of the last read line number
 last_read_line_number = 0
