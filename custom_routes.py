@@ -26,7 +26,10 @@ import copy
 import struct
 from aiohttp import web, ClientSession, ClientError, ClientTimeout, ClientResponseError
 import atexit
-
+from model_management import get_torch_device
+import torch
+import psutil
+from collections import OrderedDict
 # Global session
 client_session = None
 
@@ -1120,8 +1123,137 @@ async def proxy_to_comfydeploy(request):
 
 
 prompt_server = server.PromptServer.instance
-send_json = prompt_server.send_json
 
+
+NODE_EXECUTION_TIMES = {} # New dictionary to store node execution times
+CURRENT_START_EXECUTION_DATA = None
+
+def get_peak_memory():
+    device = get_torch_device()
+    if device.type == 'cuda':
+        return torch.cuda.max_memory_allocated(device)
+    elif device.type == 'mps':
+        # Return system memory usage for MPS devices
+        return psutil.Process().memory_info().rss
+    return 0
+
+
+def reset_peak_memory_record():
+    device = get_torch_device()
+    if device.type == 'cuda':
+        torch.cuda.reset_max_memory_allocated(device)
+    # MPS doesn't need reset as we're not tracking its memory
+
+
+def handle_execute(class_type, last_node_id, prompt_id, server, unique_id):
+    if not CURRENT_START_EXECUTION_DATA:
+        return
+    start_time = CURRENT_START_EXECUTION_DATA["nodes_start_perf_time"].get(unique_id)
+    start_vram = CURRENT_START_EXECUTION_DATA["nodes_start_vram"].get(unique_id)
+    if start_time:
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+
+        end_vram = get_peak_memory()
+        vram_used = end_vram - start_vram
+        global NODE_EXECUTION_TIMES
+        # print(f"end_vram - start_vram: {end_vram} - {start_vram} = {vram_used}")
+        NODE_EXECUTION_TIMES[unique_id] = {
+            "time": execution_time,
+            "class_type": class_type,
+            "vram_used": vram_used
+        }
+        # print(f"#{unique_id} [{class_type}]: {execution_time:.2f}s - vram {vram_used}b")
+
+
+try:
+    origin_execute = execution.execute
+
+    def swizzle_execute(
+        server,
+        dynprompt,
+        caches,
+        current_item,
+        extra_data,
+        executed,
+        prompt_id,
+        execution_list,
+        pending_subgraph_results,
+    ):
+        unique_id = current_item
+        class_type = dynprompt.get_node(unique_id)["class_type"]
+        last_node_id = server.last_node_id
+        result = origin_execute(
+            server,
+            dynprompt,
+            caches,
+            current_item,
+            extra_data,
+            executed,
+            prompt_id,
+            execution_list,
+            pending_subgraph_results,
+        )
+        handle_execute(class_type, last_node_id, prompt_id, server, unique_id)
+        return result
+
+    execution.execute = swizzle_execute
+except Exception as e:
+    pass
+
+def format_table(headers, data):
+    # Calculate column widths
+    widths = [len(h) for h in headers]
+    for row in data:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(str(cell)))
+    
+    # Create separator line
+    separator = '+' + '+'.join('-' * (w + 2) for w in widths) + '+'
+    
+    # Format header
+    result = [separator]
+    header_row = '|' + '|'.join(f' {h:<{w}} ' for w, h in zip(widths, headers)) + '|'
+    result.append(header_row)
+    result.append(separator)
+    
+    # Format data rows
+    for row in data:
+        data_row = '|' + '|'.join(f' {str(cell):<{w}} ' for w, cell in zip(widths, row)) + '|'
+        result.append(data_row)
+    
+    result.append(separator)
+    return '\n'.join(result)
+
+origin_func = server.PromptServer.send_sync
+def swizzle_send_sync(self, event, data, sid=None):
+    # print(f"swizzle_send_sync, event: {event}, data: {data}")
+    global CURRENT_START_EXECUTION_DATA
+    if event == "execution_start":
+        global NODE_EXECUTION_TIMES
+        NODE_EXECUTION_TIMES = {}  # Reset execution times at start
+        CURRENT_START_EXECUTION_DATA = dict(
+            start_perf_time=time.perf_counter(),
+            nodes_start_perf_time={},
+            nodes_start_vram={},
+        )
+
+    origin_func(self, event=event, data=data, sid=sid)
+
+    if event == "executing" and data and CURRENT_START_EXECUTION_DATA:
+        if data.get("node") is not None:
+            node_id = data.get("node")
+            CURRENT_START_EXECUTION_DATA["nodes_start_perf_time"][node_id] = (
+                time.perf_counter()
+            )
+            reset_peak_memory_record()
+            CURRENT_START_EXECUTION_DATA["nodes_start_vram"][node_id] = (
+                get_peak_memory()
+            )
+
+server.PromptServer.send_sync = swizzle_send_sync
+
+send_json = prompt_server.send_json
 
 async def send_json_override(self, event, data, sid=None):
     # logger.info("INTERNAL:", event, data, sid)
@@ -1145,10 +1277,60 @@ async def send_json_override(self, event, data, sid=None):
     asyncio.create_task(update_run_ws_event(prompt_id, event, data))
 
     if event == "execution_start":
-        await update_run(prompt_id, Status.RUNNING)
-
         if prompt_id in prompt_metadata:
             prompt_metadata[prompt_id].start_time = time.perf_counter()
+            
+        await update_run(prompt_id, Status.RUNNING)
+        
+        
+    if event == "executing" and data and CURRENT_START_EXECUTION_DATA:
+        if data.get("node") is None:
+            start_perf_time = CURRENT_START_EXECUTION_DATA.get("start_perf_time")
+            new_data = data.copy()
+            if start_perf_time is not None:
+                execution_time = time.perf_counter() - start_perf_time
+                new_data["execution_time"] = int(execution_time * 1000)
+                
+            # Replace the print statements with tabulate
+            headers = ["Node ID", "Type", "Time (s)", "VRAM (GB)"]
+            table_data = []
+            node_execution_array = []  # New array to store execution data
+            
+            for node_id, node_data in NODE_EXECUTION_TIMES.items():
+                vram_gb = node_data['vram_used'] / (1024**3)  # Convert bytes to GB
+                table_data.append([
+                    f"#{node_id}",
+                    node_data['class_type'],
+                    f"{node_data['time']:.2f}",
+                    f"{vram_gb:.2f}"
+                ])
+                
+                # Add to our new array format
+                node_execution_array.append({
+                    "id": node_id,
+                    **node_data,
+                })
+            
+            # Add total execution time as the last row
+            table_data.append([
+                "TOTAL",
+                "-",
+                f"{execution_time:.2f}",
+                "-"
+            ])
+            
+            prompt_id = data.get("prompt_id")
+            await update_run_with_output(
+                prompt_id,
+                node_execution_array,  # Send the array instead of the OrderedDict
+            )
+            
+            print(node_execution_array)
+            
+            # print("\n=== Node Execution Times ===")
+            logger.info("Printing Node Execution Times")
+            logger.info(format_table(headers, table_data))
+            # print("========================\n")
 
     # the last executing event is none, then the workflow is finished
     if event == "executing" and data.get("node") is None:
@@ -1227,7 +1409,8 @@ async def send_json_override(self, event, data, sid=None):
                 "node_class": class_type,
             }
             if class_type == "PreviewImage":
-                logger.info("Skipping preview image")
+                pass
+                # logger.info("Skipping preview image")
             else:
                 await update_run_with_output(
                     prompt_id,
@@ -1236,13 +1419,13 @@ async def send_json_override(self, event, data, sid=None):
                     node_meta=node_meta,
                 )
                 if prompt_id in comfy_message_queues:
-                    comfy_message_queues[prompt_id].put_nowait({
-                        "event": "output_ready",
-                        "data": data
-                    })
-            logger.info(f"Executed {class_type} {data}")
+                    comfy_message_queues[prompt_id].put_nowait(
+                        {"event": "output_ready", "data": data}
+                    )
+            # logger.info(f"Executed {class_type} {data}")
         else:
-            logger.info(f"Executed {data}")
+            pass
+            # logger.info(f"Executed {data}")
 
 
 # Global variable to keep track of the last read line number
