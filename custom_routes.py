@@ -139,7 +139,7 @@ async def async_request_with_retry(
                 logger.error(f"Error response body: {error_body}")
 
             if attempt == max_retries - 1:
-                logger.error(f"Request failed after {max_retries} attempts: {e}")
+                logger.error(f"Request {method} : {url} failed after {max_retries} attempts: {e}")
                 raise
 
         await asyncio.sleep(retry_delay)
@@ -147,7 +147,7 @@ async def async_request_with_retry(
 
     total_time = time.time() - start_time
     raise Exception(
-        f"Request failed after {max_retries} attempts and {total_time:.2f} seconds"
+        f"Request {method} : {url} failed after {max_retries} attempts and {total_time:.2f} seconds"
     )
 
 
@@ -1310,7 +1310,7 @@ async def send_json_override(self, event, data, sid=None):
     if prompt_id in comfy_message_queues:
         comfy_message_queues[prompt_id].put_nowait({"event": event, "data": data})
 
-    asyncio.create_task(update_run_ws_event(prompt_id, event, data))
+    # asyncio.create_task(update_run_ws_event(prompt_id, event, data))
 
     if event == "execution_start":
         if prompt_id in prompt_metadata:
