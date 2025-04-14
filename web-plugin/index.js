@@ -168,7 +168,6 @@ function setSelectedWorkflowInfo(info) {
 
 const VALID_TYPES = [
   "STRING",
-  "combo",
   "number",
   "toggle",
   "BOOLEAN",
@@ -265,22 +264,44 @@ function convertToInput(node, widget, config) {
   }
   node.setSize([Math.max(sz[0], node.size[0]), Math.max(sz[1], node.size[1])]);
 
-  if (type == "STRING") {
-    var inputNode = LiteGraph.createNode("ComfyUIDeployExternalText");
-    console.log(widget);
-    const index = node.inputs.findIndex((x) => x.name == widget.name);
-    console.log(node.widgets_values, index);
-    inputNode.configure({
-      widgets_values: ["input_text", widget.value],
-    });
-    inputNode.id = ++app.graph.last_node_id;
-    inputNode.pos = node.pos;
-    inputNode.pos[0] -= node.size[0] + 40;
-    console.log(inputNode);
-    console.log(app.graph);
-    app.graph.add(inputNode);
-    inputNode.connect(0, node, index);
+  let externalNode = "";
+  let inputId = "";
+
+  console.log(type);
+
+  if (type === "INT") {
+    externalNode = "ComfyUIDeployExternalNumberInt";
+    inputId = "input_number";
   }
+
+  if (type === "FLOAT") {
+    externalNode = "ComfyUIDeployExternalNumberSlider";
+    inputId = "input_number";
+  }
+  
+  if (type === "STRING") {
+    externalNode = "ComfyUIDeployExternalText";
+    inputId = "input_text";
+  }
+
+  if (!externalNode || !inputId) return;
+
+  var inputNode = LiteGraph.createNode(externalNode);
+  console.log(widget);
+  const index = node.inputs.findIndex((x) => x.name == widget.name);
+  console.log(node.widgets_values, index);
+  inputNode.configure({
+    widgets_values: [inputId, widget.value],
+  });
+  inputNode.id = ++app.graph.last_node_id;
+  inputNode.pos = node.pos;
+  inputNode.pos[0] -= node.size[0] + 40;
+  console.log(inputNode);
+  console.log(app.graph);
+  app.graph.add(inputNode);
+  inputNode.connect(0, node, index);
+
+  app.graph.setDirtyCanvas(true);
 
   return input;
 }
