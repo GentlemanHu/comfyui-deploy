@@ -139,7 +139,9 @@ async def async_request_with_retry(
                 logger.error(f"Error response body: {error_body}")
 
             if attempt == max_retries - 1:
-                logger.error(f"Request {method} : {url} failed after {max_retries} attempts: {e}")
+                logger.error(
+                    f"Request {method} : {url} failed after {max_retries} attempts: {e}"
+                )
                 raise
 
         await asyncio.sleep(retry_delay)
@@ -1842,8 +1844,13 @@ async def upload_file(
 
 def have_pending_upload(prompt_id):
     # Check if there are pending uploads in the queue
-    if prompt_id in upload_queue.pending_uploads and upload_queue.pending_uploads[prompt_id]:
-        logger.info(f"Have pending upload {len(upload_queue.pending_uploads[prompt_id])}")
+    if (
+        prompt_id in upload_queue.pending_uploads
+        and upload_queue.pending_uploads[prompt_id]
+    ):
+        logger.info(
+            f"Have pending upload {len(upload_queue.pending_uploads[prompt_id])}"
+        )
         return True
 
     logger.info("No pending upload")
@@ -1949,7 +1956,7 @@ async def handle_upload(
 
     for item in items:
         # Skipping temp files
-        if item.get("type") == "temp":
+        if isinstance(item, dict) and item.get("type") == "temp":
             continue
 
         file_type = item.get(content_type_key, default_content_type)
@@ -2011,7 +2018,9 @@ async def upload_in_background(
                             filename = os.path.basename(item)
                             # Extract folder name from the path
                             folder_path = os.path.dirname(item)
-                            subfolder = os.path.basename(folder_path) if folder_path else ""
+                            subfolder = (
+                                os.path.basename(folder_path) if folder_path else ""
+                            )
                             item = {
                                 "filename": filename,
                                 "subfolder": subfolder,
@@ -2019,7 +2028,7 @@ async def upload_in_background(
                             }
 
                     # Skip temp files
-                    if item.get("type") == "temp":
+                    if isinstance(item, dict) and item.get("type") == "temp":
                         continue
 
                     # Add to the upload queue instead of uploading immediately
@@ -2393,6 +2402,11 @@ class UploadQueue:
 
         if not file_upload_endpoint:
             logger.warning(f"No upload endpoint for prompt ID: {prompt_id}")
+            return
+
+        # Check if file_info is a valid dictionary with a filename
+        if not isinstance(file_info, dict) or "filename" not in file_info:
+            logger.warning(f"Invalid file_info for prompt ID {prompt_id}: {file_info}")
             return
 
         filename = file_info.get("filename")
