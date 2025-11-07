@@ -1,8 +1,5 @@
 from io import BytesIO
-from pprint import pprint
-from aiohttp import web
 import os
-import requests
 import folder_paths
 import json
 import server
@@ -13,33 +10,23 @@ import random
 import traceback
 import uuid
 import asyncio
-import logging
-from urllib.parse import quote
+import inspect
+from urllib.parse import quote, urlencode
 import threading
 import hashlib
 import aiohttp
-from aiohttp import ClientSession, web
+from aiohttp import web, ClientSession, ClientError, ClientTimeout
 import aiofiles
-from typing import Dict, List, Union, Any, Optional
-from PIL import Image
+from typing import Dict, Any
 import copy
 import struct
-from aiohttp import web, ClientSession, ClientError, ClientTimeout, ClientResponseError
 import atexit
 from model_management import get_torch_device
 import torch
 import psutil
-from collections import OrderedDict
-import io
-from urllib.parse import urlencode
 
 # Global session
 client_session = None
-
-# def create_client_session():
-#     global client_session
-#     if client_session is None:
-#         client_session = aiohttp.ClientSession()
 
 
 async def ensure_client_session():
@@ -81,8 +68,6 @@ max_retries = int(os.environ.get("MAX_RETRIES", "5"))
 retry_delay_multiplier = float(os.environ.get("RETRY_DELAY_MULTIPLIER", "2"))
 
 print(f"max_retries: {max_retries}, retry_delay_multiplier: {retry_delay_multiplier}")
-
-import time
 
 
 async def async_request_with_retry(
@@ -334,8 +319,12 @@ async def post_prompt(json_data):
             extra_data["client_id"] = json_data["client_id"]
         if valid[0]:
             outputs_to_execute = valid[2]
+            sensitive = {}
+            for sensitive_val in execution.SENSITIVE_EXTRA_DATA_KEYS:
+                if sensitive_val in extra_data:
+                    sensitive[sensitive_val] = extra_data.pop(sensitive_val)
             prompt_server.prompt_queue.put(
-                (number, prompt_id, prompt, extra_data, outputs_to_execute)
+                (number, prompt_id, prompt, extra_data, outputs_to_execute, sensitive)
             )
             response = {
                 "prompt_id": prompt_id,
@@ -1323,6 +1312,9 @@ try:
     is_async = asyncio.iscoroutinefunction(origin_execute)
 
     if is_async:
+        # Check signature for backward compatibility (v0.3.67 has 10 params, v0.3.68+ has 11)
+        sig = inspect.signature(origin_execute)
+        has_ui_outputs = len(sig.parameters) >= 11
 
         async def swizzle_execute(
             server,
@@ -1335,12 +1327,14 @@ try:
             execution_list,
             pending_subgraph_results,
             pending_async_nodes,
+            ui_outputs=None,
         ):
             unique_id = current_item
             class_type = dynprompt.get_node(unique_id)["class_type"]
             last_node_id = server.last_node_id
 
-            result = await origin_execute(
+            # Build args list - add ui_outputs only for v0.3.68+
+            args = [
                 server,
                 dynprompt,
                 caches,
@@ -1351,12 +1345,16 @@ try:
                 execution_list,
                 pending_subgraph_results,
                 pending_async_nodes,
-            )
+            ]
+            if has_ui_outputs:
+                args.append(ui_outputs)
+
+            result = await origin_execute(*args)
 
             handle_execute(class_type, last_node_id, prompt_id, server, unique_id)
             return result
     else:
-
+        # Sync version for very old ComfyUI versions
         def swizzle_execute(
             server,
             dynprompt,
