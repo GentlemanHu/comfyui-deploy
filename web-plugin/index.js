@@ -11,21 +11,46 @@ import {
 import { initializeMachineManager } from "./machine-manager.js";
 import { initializeModelManager } from "./model-manager.js";
 
-const COMFY_DEPLOY_PLUGIN_VERSION = "2026-05-13-basic-auth-safe";
+const COMFY_DEPLOY_PLUGIN_VERSION = "2026-05-13-basic-auth-safe-2";
 console.info(`[ComfyDeploy] plugin loaded: ${COMFY_DEPLOY_PLUGIN_VERSION}`);
 
-if (!window.__comfyDeployFetch401TracerInstalled) {
-  window.__comfyDeployFetch401TracerInstalled = true;
+function normalizeComfyDeployProxyRequest(input, init = {}) {
+  const requestUrl = typeof input === "string" ? input : input?.url || "";
+  const isComfyDeployProxy =
+    requestUrl.startsWith("/comfyui-deploy/") ||
+    requestUrl.startsWith(`${window.location.origin}/comfyui-deploy/`);
+
+  if (!isComfyDeployProxy) return init;
+
+  const headers = new Headers(init.headers || {});
+  const authorization = headers.get("Authorization");
+  if (authorization?.toLowerCase().startsWith("bearer ")) {
+    headers.set("X-ComfyDeploy-Authorization", authorization);
+    headers.delete("Authorization");
+  }
+
+  return {
+    ...init,
+    credentials: "include",
+    headers,
+  };
+}
+
+if (!window.__comfyDeployFetchGuardInstalled) {
+  window.__comfyDeployFetchGuardInstalled = true;
   const originalWindowFetch = window.fetch.bind(window);
   window.fetch = async (input, init = {}) => {
-    const response = await originalWindowFetch(input, init);
+    const normalizedInit = normalizeComfyDeployProxyRequest(input, init);
+    const response = await originalWindowFetch(input, normalizedInit);
     if (response.status === 401 || response.status === 403) {
       const requestUrl =
         typeof input === "string" ? input : input?.url || String(input);
       console.error("[ComfyDeploy] HTTP auth failed", {
         status: response.status,
         url: requestUrl,
-        headers: init?.headers || {},
+        headers: Object.fromEntries(
+          new Headers(normalizedInit?.headers || {}).entries()
+        ),
       });
     }
     return response;
