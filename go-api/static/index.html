@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ComfyDeploy Go</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+      body { margin: 0; background: #0b0f14; color: #f7fafc; }
+      main { max-width: 880px; margin: 0 auto; padding: 56px 24px; }
+      h1 { margin: 0 0 12px; font-size: 32px; }
+      p { color: #a8b3c2; line-height: 1.6; }
+      code { background: #18202b; border: 1px solid #263244; border-radius: 6px; padding: 2px 6px; }
+      .panel { margin-top: 28px; border: 1px solid #263244; border-radius: 8px; padding: 20px; background: #111821; }
+      .ok { color: #66e3a8; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ComfyDeploy Go Backend</h1>
+      <p class="ok">Go API is running.</p>
+      <div class="panel">
+        <p>
+          This branch replaces the backend API runtime with Go and keeps the existing
+          database, S3-compatible storage, ComfyUI plugin API, and deployment endpoints.
+        </p>
+        <p>
+          The full React dashboard is still served by the legacy Next.js runtime until
+          its server-rendered pages are migrated to static React. API-compatible clients
+          and the ComfyUI plugin can use this service at the same domain via <code>/api/*</code>.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

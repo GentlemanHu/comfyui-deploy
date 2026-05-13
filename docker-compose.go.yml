@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:15.2-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: verceldb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d verceldb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:5480:5432"
+    volumes:
+      - comfydeploy-postgres:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    environment:
+      MINIO_ROOT_USER: ${SPACES_KEY:-comfydeploy}
+      MINIO_ROOT_PASSWORD: ${SPACES_SECRET:?set SPACES_SECRET in .env}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-*}
+      MINIO_SCANNER_SPEED: ${MINIO_SCANNER_SPEED:-slowest}
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - comfydeploy-minio:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    environment:
+      SPACES_KEY: ${SPACES_KEY:-comfydeploy}
+      SPACES_SECRET: ${SPACES_SECRET:?set SPACES_SECRET in .env}
+      SPACES_BUCKET: ${SPACES_BUCKET:-comfyui-deploy}
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 \"$${SPACES_KEY}\" \"$${SPACES_SECRET}\"; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc mb --ignore-existing \"local/$${SPACES_BUCKET}\" &&
+      mc anonymous set download \"local/$${SPACES_BUCKET}\" &&
+      exit 0"
+
+  go-api:
+    build:
+      context: ./go-api
+    image: ${COMFYDEPLOY_GO_IMAGE:-comfydeploy-go:local}
+    environment:
+      GO_API_ADDR: ":3000"
+      POSTGRES_URL: ${POSTGRES_URL:-postgres://postgres:postgres@postgres:5432/verceldb?sslmode=disable}
+      GO_API_MIGRATE: ${GO_API_MIGRATE:-true}
+      LOCAL_AUTH_USER_ID: ${LOCAL_AUTH_USER_ID:-local-admin}
+      LOCAL_AUTH_USER_NAME: ${LOCAL_AUTH_USER_NAME:-Local Admin}
+      LOCAL_AUTH_ORG_ID: ${LOCAL_AUTH_ORG_ID:-}
+      LOCAL_AUTH_ORG_NAME: ${LOCAL_AUTH_ORG_NAME:-Local}
+      LOCAL_AUTH_PASSWORD: ${LOCAL_AUTH_PASSWORD:-}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-http://minio:9000}
+      SPACES_PUBLIC_ENDPOINT: ${SPACES_PUBLIC_ENDPOINT:-http://localhost:9000}
+      SPACES_ENDPOINT_CDN: ${SPACES_ENDPOINT_CDN:-http://localhost:9000}
+      SPACES_REGION: ${SPACES_REGION:-nyc3}
+      SPACES_BUCKET: ${SPACES_BUCKET:-comfyui-deploy}
+      SPACES_KEY: ${SPACES_KEY:-comfydeploy}
+      SPACES_SECRET: ${SPACES_SECRET:?set SPACES_SECRET in .env}
+      SPACES_CDN_DONT_INCLUDE_BUCKET: ${SPACES_CDN_DONT_INCLUDE_BUCKET:-false}
+      SPACES_CDN_FORCE_PATH_STYLE: ${SPACES_CDN_FORCE_PATH_STYLE:-true}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  comfydeploy-postgres:
+  comfydeploy-minio:
