@@ -86,11 +86,19 @@ services:
       PLAUSIBLE_DOMAIN: ${PLAUSIBLE_DOMAIN:-}
       NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
       NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-}
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PRIVATE_BUILD_WORKER: ${NEXT_PRIVATE_BUILD_WORKER:-1}
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=1024}
+      COMFYDEPLOY_WEB_MODE: ${COMFYDEPLOY_WEB_MODE:-prod}
     command: >
       sh -lc "bun install &&
       SSL=false LOCAL=true bun run migrate.mts &&
-      bun run build &&
-      bun run start --hostname 0.0.0.0"
+      if [ \"$${COMFYDEPLOY_WEB_MODE}\" = \"dev\" ]; then
+        bun run dev --hostname 0.0.0.0;
+      else
+        bun run build &&
+        bun run start --hostname 0.0.0.0;
+      fi"
     depends_on:
       postgres:
         condition: service_healthy
