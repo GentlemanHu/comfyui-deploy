@@ -1,6 +1,6 @@
 import { APIKeyList } from "@/components/APIKeyList";
 import { getAPIKeys } from "@/server/curdApiKeys";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 
 export default function Page() {
   return <Component />;

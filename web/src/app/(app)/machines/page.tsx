@@ -2,8 +2,8 @@ import { AccessType } from "../../../lib/AccessType";
 import { MachineList } from "@/components/MachineList";
 import { db } from "@/db/db";
 import { machinesTable } from "@/db/schema";
-import { auth } from "@clerk/nextjs";
-import { clerkClient } from "@clerk/nextjs/server";
+import { auth } from "@/server/localAuth";
+import { clerkClient } from "@/server/localAuth";
 import { desc, eq, isNull, and } from "drizzle-orm";
 
 export default function Page() {

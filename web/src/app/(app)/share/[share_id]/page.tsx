@@ -18,7 +18,7 @@ import {
 	cloneWorkflow,
 	findSharedDeployment,
 } from "@/server/curdDeploments";
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@/server/localAuth";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 

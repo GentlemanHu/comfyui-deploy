@@ -8,7 +8,7 @@ import { withServerPromise } from "./withServerPromise";
 import { db } from "@/db/db";
 import type { MachineType } from "@/db/schema";
 import { machinesTable } from "@/db/schema";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";

@@ -10,7 +10,7 @@ import { machinesTable, workflowRunsTable } from "@/db/schema";
 import type { APIKeyUserType } from "@/server/APIKeyBodyRequest";
 import { getRunsData } from "@/server/getRunsData";
 import { ComfyAPI_Run } from "@/types/ComfyAPI_Run";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import "server-only";

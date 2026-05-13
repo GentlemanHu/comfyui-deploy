@@ -3,7 +3,7 @@ import { getAllUserWorkflow } from "../../../server/crudWorkflow";
 import { WorkflowList } from "@/components/WorkflowList";
 import { db } from "@/db/db";
 import { usersTable } from "@/db/schema";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import { eq } from "drizzle-orm";
 
 export default function Home() {

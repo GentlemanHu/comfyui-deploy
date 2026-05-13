@@ -1,6 +1,6 @@
 import { db } from "@/db/db";
 import { usersTable } from "@/db/schema";
-import { clerkClient } from "@clerk/nextjs";
+import { clerkClient } from "@/server/localAuth";
 
 export async function setInitialUserData(userId: string) {
   const user = await clerkClient.users.getUser(userId);

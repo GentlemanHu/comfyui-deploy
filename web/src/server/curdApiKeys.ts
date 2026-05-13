@@ -3,7 +3,7 @@
 import { db } from "@/db/db";
 import { apiKeyTable, authRequestsTable } from "@/db/schema";
 import { withServerPromise } from "@/server/withServerPromise";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { revalidatePath } from "next/cache";

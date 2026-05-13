@@ -8,7 +8,7 @@ import AutoForm, { AutoFormSubmit } from "@/components/ui/auto-form";
 import { Button } from "@/components/ui/button";
 import type { getInputsFromWorkflow } from "@/lib/getInputsFromWorkflow";
 import { createRun } from "@/server/createRun";
-import { useAuth, useClerk } from "@clerk/nextjs";
+import { useAuth, useClerk } from "@/lib/localClientAuth";
 import { Play } from "lucide-react";
 import { useMemo, useState } from "react";
 

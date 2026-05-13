@@ -1,7 +1,7 @@
 "use server";
 
 import { getMachineById } from "@/server/curdMachine";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import jwt from "jsonwebtoken";
 import { getOrgOrUserDisplayName } from "@/server/getOrgOrUserDisplayName";
 import { withServerPromise } from "@/server/withServerPromise";

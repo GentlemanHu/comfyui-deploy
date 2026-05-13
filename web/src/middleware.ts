@@ -1,33 +1,44 @@
-import { authMiddleware, redirectToSignIn } from "@clerk/nextjs";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-// This example protects all routes including api/trpc routes
-// Please edit this to allow other routes to be public as needed.
-// See https://clerk.com/docs/references/nextjs/auth-middleware for more information about configuring your Middleware
-export default authMiddleware({
-  // debug: true,
-  publicRoutes: ["/", "/api/(.*)", "/docs(.*)", "/share(.*)"],
-  // publicRoutes: ["/", "/(.*)"],
-  async afterAuth(auth, req, evt) {
-    // redirect them to organization selection page
-    const userId = auth.userId;
+const publicPrefixes = ["/api", "/docs", "/share"];
 
-    // Parse the URL to get the pathname
-    const url = new URL(req.url);
-    const pathname = url.pathname;
+function isPublicPath(pathname: string) {
+  return publicPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
 
-    if (
-      !auth.userId &&
-      !auth.isPublicRoute
-      // ||
-      // pathname === "/create" ||
-      // pathname === "/history" ||
-      // pathname.startsWith("/edit")
-    ) {
-      const url = new URL(req.url);
-      return redirectToSignIn({ returnBackUrl: url.origin });
+export default function middleware(request: NextRequest) {
+  const password = process.env.LOCAL_AUTH_PASSWORD;
+  if (!password || isPublicPath(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
+  const authorization = request.headers.get("authorization");
+  if (authorization?.startsWith("Basic ")) {
+    try {
+      const [, encoded] = authorization.split(" ");
+      const [, providedPassword] = atob(encoded).split(":");
+      if (providedPassword === password) {
+        return NextResponse.next();
+      }
+    } catch {
+      return unauthorized();
     }
-  },
-});
+  }
+
+  return unauthorized();
+}
+
+function unauthorized() {
+  return new NextResponse("Authentication required", {
+    status: 401,
+    headers: {
+      "WWW-Authenticate": 'Basic realm="ComfyUI Deploy"',
+    },
+  });
+}
 
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/", "/(api|trpc)(.*)"],

@@ -11,7 +11,7 @@ services:
       timeout: 5s
       retries: 20
     ports:
-      - "5480:5432"
+      - "127.0.0.1:5480:5432"
     volumes:
       - comfydeploy-postgres:/var/lib/postgresql/data
 
@@ -25,7 +25,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "5481:80"
+      - "127.0.0.1:5481:80"
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -35,8 +35,8 @@ services:
       MINIO_API_CORS_ALLOW_ORIGIN: "*"
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - comfydeploy-minio:/data
 
@@ -59,12 +59,19 @@ services:
   web:
     image: oven/bun:1.1
     working_dir: /app
+    env_file:
+      - path: ./web/.env.local.docker
+        required: false
     environment:
       POSTGRES_SSL: "false"
       POSTGRES_URL: ${POSTGRES_URL:-postgres://postgres:postgres@postgres:5432/verceldb}
       POSTGRES_WS_PROXY: ${POSTGRES_WS_PROXY:-pg_proxy:80/v1}
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      LOCAL_AUTH_USER_ID: ${LOCAL_AUTH_USER_ID:-local-admin}
+      LOCAL_AUTH_USER_NAME: ${LOCAL_AUTH_USER_NAME:-Local Admin}
+      LOCAL_AUTH_ORG_ID: ${LOCAL_AUTH_ORG_ID:-}
+      LOCAL_AUTH_ORG_NAME: ${LOCAL_AUTH_ORG_NAME:-Local}
+      LOCAL_AUTH_PASSWORD: ${LOCAL_AUTH_PASSWORD:-}
+      NEXT_PUBLIC_LOCAL_AUTH_USER_ID: ${NEXT_PUBLIC_LOCAL_AUTH_USER_ID:-local-admin}
       SPACES_ENDPOINT: ${SPACES_ENDPOINT:-http://minio:9000}
       SPACES_PUBLIC_ENDPOINT: ${SPACES_PUBLIC_ENDPOINT:-http://localhost:9000}
       SPACES_ENDPOINT_CDN: ${SPACES_ENDPOINT_CDN:-http://localhost:9000}
@@ -91,7 +98,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./web:/app
       - comfydeploy-bun-cache:/root/.bun

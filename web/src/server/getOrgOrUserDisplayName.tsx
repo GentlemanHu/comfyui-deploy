@@ -1,6 +1,6 @@
 import { db } from "@/db/db";
 import { usersTable } from "@/db/schema";
-import { clerkClient } from "@clerk/nextjs";
+import { clerkClient } from "@/server/localAuth";
 import { eq } from "drizzle-orm";
 
 export async function getOrgOrUserDisplayName(

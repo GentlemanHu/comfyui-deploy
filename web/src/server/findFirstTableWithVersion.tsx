@@ -1,6 +1,6 @@
 import { db } from "@/db/db";
 import { workflowTable, workflowVersionTable } from "@/db/schema";
-import { auth } from "@clerk/nextjs";
+import { auth } from "@/server/localAuth";
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 export async function findFirstTableWithVersion(workflow_id: string) {
