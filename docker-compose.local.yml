@@ -33,6 +33,7 @@ services:
       MINIO_ROOT_USER: ${SPACES_KEY:-comfydeploy}
       MINIO_ROOT_PASSWORD: ${SPACES_SECRET:?set SPACES_SECRET in .env}
       MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-*}
+      MINIO_SCANNER_SPEED: ${MINIO_SCANNER_SPEED:-slowest}
     command: server /data --console-address ":9001"
     ports:
       - "127.0.0.1:9000:9000"
@@ -96,7 +97,8 @@ services:
       if [ \"$${COMFYDEPLOY_WEB_MODE}\" = \"dev\" ]; then
         bun run dev --hostname 0.0.0.0;
       else
-        bun run build &&
+        bun run build ||
+        { echo 'next build failed, falling back to next dev. Set COMFYDEPLOY_WEB_MODE=dev or add swap for production build.'; bun run dev --hostname 0.0.0.0; exit 0; };
         bun run start --hostname 0.0.0.0;
       fi"
     depends_on:
