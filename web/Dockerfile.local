@@ -1,0 +1,55 @@
+FROM oven/bun:1.1.45 AS deps
+WORKDIR /app
+
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile
+
+FROM oven/bun:1.1.45 AS builder
+WORKDIR /app
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PRIVATE_BUILD_WORKER=1
+ENV NODE_OPTIONS=--max-old-space-size=2048
+ENV POSTGRES_SSL=false
+ENV POSTGRES_URL=postgres://postgres:postgres@postgres:5432/verceldb
+ENV POSTGRES_WS_PROXY=pg_proxy:80/v1
+ENV LOCAL_AUTH_USER_ID=local-admin
+ENV LOCAL_AUTH_USER_NAME="Local Admin"
+ENV LOCAL_AUTH_PASSWORD=local-build-password
+ENV NEXT_PUBLIC_LOCAL_AUTH_USER_ID=local-admin
+ENV SPACES_ENDPOINT=http://minio:9000
+ENV SPACES_PUBLIC_ENDPOINT=http://localhost:9000
+ENV SPACES_ENDPOINT_CDN=http://localhost:9000
+ENV SPACES_REGION=nyc3
+ENV SPACES_BUCKET=comfyui-deploy
+ENV SPACES_KEY=comfydeploy
+ENV SPACES_SECRET=local-build-secret
+ENV SPACES_CDN_DONT_INCLUDE_BUCKET=false
+ENV SPACES_CDN_FORCE_PATH_STYLE=true
+ENV MODAL_BUILDER_URL=
+ENV JWT_SECRET=local-build-jwt-secret
+ENV PLAUSIBLE_DOMAIN=
+ENV NEXT_PUBLIC_POSTHOG_KEY=
+ENV NEXT_PUBLIC_POSTHOG_HOST=
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN bun run build
+
+FROM oven/bun:1.1.45 AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/migrate.mts ./migrate.mts
+COPY --from=builder /app/next.config.mjs ./next.config.mjs
+
+EXPOSE 3000
+CMD ["bun", "run", "start", "--hostname", "0.0.0.0"]
