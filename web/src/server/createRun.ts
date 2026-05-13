@@ -11,6 +11,7 @@ import type { APIKeyUserType } from "@/server/APIKeyBodyRequest";
 import { getRunsData } from "@/server/getRunsData";
 import { ComfyAPI_Run } from "@/types/ComfyAPI_Run";
 import { auth } from "@/server/localAuth";
+import { getMachineEndpointAndHeaders } from "@/server/machineAuth";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import "server-only";
@@ -192,9 +193,11 @@ export const createRun = withServerPromise(
             prompt_id: prompt_id,
           };
           // console.log(body);
-          const comfyui_endpoint = `${machine.endpoint}/comfyui-deploy/run`;
+          const machineRequest = getMachineEndpointAndHeaders(machine);
+          const comfyui_endpoint = `${machineRequest.endpoint}/comfyui-deploy/run`;
           const _result = await fetch(comfyui_endpoint, {
             method: "POST",
+            headers: machineRequest.headers,
             body: JSON.stringify(body),
             cache: "no-store",
           });

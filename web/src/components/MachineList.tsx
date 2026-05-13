@@ -392,9 +392,23 @@ export function MachineList({
           />
           <InsertModal
             title="Custom Machine"
-            description="Add custom comfyui machines to your account."
+            description="Add custom ComfyUI machines. For Basic Auth, put username:password in auth_token."
             serverAction={addMachine}
             formSchema={addMachineSchema}
+            fieldConfig={{
+              endpoint: {
+                description:
+                  "ComfyUI base URL, for example https://comfy.example.com.",
+              },
+              auth_token: {
+                description:
+                  "Optional. Basic Auth: username:password or Basic base64. Bearer tokens are also accepted.",
+                inputProps: {
+                  type: "password",
+                  placeholder: "username:password",
+                },
+              },
+            }}
           />
         </div>
       </div>
