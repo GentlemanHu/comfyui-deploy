@@ -129,7 +129,7 @@ async function fetchWorkflowVersions(
   const res = await fetch(`/comfyui-deploy/workflow/versions?${params}`, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${data.apiKey}`,
+      "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
       "Content-Type": "application/json",
     },
   });
@@ -148,7 +148,7 @@ async function fetchWorkflowVersionData(getData, workflowId, version) {
   const res = await fetch(`/comfyui-deploy/workflow/version?${params}`, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${data.apiKey}`,
+      "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
       "Content-Type": "application/json",
     },
   });
@@ -594,7 +594,7 @@ async function fetchWorkflows(getData, offset = 0, limit = 20, search = "") {
     const response = await fetch(`/comfyui-deploy/workflows?${params}`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${data.apiKey}`,
+        "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
         "Content-Type": "application/json",
       },
     });
@@ -655,7 +655,7 @@ function createWorkflowItem(workflow, getTimeAgo, getData) {
       const response = await fetch(`/comfyui-deploy/workflow?${params}`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${data.apiKey}`,
+          "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
           "Content-Type": "application/json",
         },
       });

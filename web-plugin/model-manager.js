@@ -719,7 +719,7 @@ window.syncSelectedModels = async function () {
       ? window.comfyDeployGetModelData()
       : {}) || {};
   const apiUrl = data.apiUrl || "https://api.comfydeploy.com";
-  const authHeader = { Authorization: `Bearer ${data.apiKey}` };
+  const authHeader = { "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}` };
 
   let successCount = 0;
   let failCount = 0;

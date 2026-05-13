@@ -309,7 +309,7 @@ async function fetchMachineDetails(machineId, getData) {
     const response = await fetch(`/comfyui-deploy/machine?${params}`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${data.apiKey}`,
+        "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
         "Content-Type": "application/json",
       },
     });
@@ -424,7 +424,7 @@ window.syncMachine = async function (machineId) {
         snapshot: snapshot,
       }),
       headers: {
-        Authorization: `Bearer ${data.apiKey}`,
+        "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
         "Content-Type": "application/json",
       },
     }).then((x) => x.json());
@@ -1466,7 +1466,7 @@ window.applySyncChanges = async function (machineId) {
     const response = await fetch(`/comfyui-deploy/machine/update`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${window.comfyDeployGetData().apiKey}`,
+        "X-ComfyDeploy-Authorization": `Bearer ${window.comfyDeployGetData().apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -1949,7 +1949,7 @@ async function loadCreateMachineData() {
           snapshot: snapshot,
         }),
         headers: {
-          Authorization: `Bearer ${window.comfyDeployGetData().apiKey}`,
+          "X-ComfyDeploy-Authorization": `Bearer ${window.comfyDeployGetData().apiKey}`,
           "Content-Type": "application/json",
         },
       }
@@ -2289,7 +2289,7 @@ window.createMachine = async function () {
     const response = await fetch("/comfyui-deploy/machine/create", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${data.apiKey}`,
+        "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

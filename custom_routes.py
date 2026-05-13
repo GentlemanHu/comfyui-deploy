@@ -70,6 +70,18 @@ retry_delay_multiplier = float(os.environ.get("RETRY_DELAY_MULTIPLIER", "2"))
 print(f"max_retries: {max_retries}, retry_delay_multiplier: {retry_delay_multiplier}")
 
 
+def get_comfydeploy_auth_header(request):
+    auth_header = request.headers.get("X-ComfyDeploy-Authorization")
+    if auth_header:
+        return auth_header
+
+    legacy_auth_header = request.headers.get("Authorization")
+    if legacy_auth_header and legacy_auth_header.lower().startswith("bearer "):
+        return legacy_auth_header
+
+    return None
+
+
 async def async_request_with_retry(
     method, url, disable_timeout=False, token=None, **kwargs
 ):
@@ -602,7 +614,7 @@ async def comfy_deploy_run(request):
                 json=data,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": request.headers.get("Authorization"),
+                    "Authorization": get_comfydeploy_auth_header(request),
                 },
             ) as response:
                 data = await response.json()
@@ -611,7 +623,7 @@ async def comfy_deploy_run(request):
     if "cd_token" in data:
         token = data["cd_token"]
     else:
-        auth_header = request.headers.get("Authorization")
+        auth_header = get_comfydeploy_auth_header(request)
         token = None
         if auth_header:
             parts = auth_header.split()
@@ -769,7 +781,7 @@ async def stream_response(request):
     await response.prepare(request)
 
     # Extract the bearer token from the Authorization header
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
     token = None
     if auth_header:
         parts = auth_header.split()
@@ -3048,7 +3060,7 @@ async def create_workflow_proxy(request):
     machine_id = data.get("machine_id")
     api_url = data.get("api_url", "https://api.comfydeploy.com")
 
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
     if not auth_header:
         return web.json_response(
             {"error": "Authorization header is required"}, status=401
@@ -3093,7 +3105,7 @@ async def create_workflow_version_proxy(request):
     comment = data.get("comment", "")
     api_url = data.get("api_url", "https://api.comfydeploy.com")
 
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3130,7 +3142,7 @@ async def get_workflows_proxy(request):
     search = request.rel_url.query.get("search", "")
     limit = request.rel_url.query.get("limit", 10)
     offset = request.rel_url.query.get("offset", 0)
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3170,7 +3182,7 @@ async def get_workflows_proxy(request):
 async def get_workflow_proxy(request):
     workflow_id = request.rel_url.query.get("workflow_id")
     api_url = request.rel_url.query.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3198,7 +3210,7 @@ async def get_workflow_versions_proxy(request):
     search = request.rel_url.query.get("search", "")
     limit = request.rel_url.query.get("limit", "20")
     offset = request.rel_url.query.get("offset", "0")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3232,7 +3244,7 @@ async def get_workflow_version_proxy(request):
     workflow_id = request.rel_url.query.get("workflow_id")
     version = request.rel_url.query.get("version")
     api_url = request.rel_url.query.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3257,7 +3269,7 @@ async def get_workflow_version_proxy(request):
 async def get_machine_proxy(request):
     machine_id = request.rel_url.query.get("machine_id")
     api_url = request.rel_url.query.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3283,7 +3295,7 @@ async def snapshot_to_docker_proxy(request):
     data = await request.json()
     snapshot = data.get("snapshot")
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3313,7 +3325,7 @@ async def update_machine_proxy(request):
     comfyui_version = data.get("comfyui_version", None)
     docker_steps = data.get("docker_steps")
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3345,7 +3357,7 @@ async def create_machine_proxy(request):
     docker_command_steps = data.get("docker_command_steps")
     comfyui_version = data.get("comfyui_version")
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3376,7 +3388,7 @@ async def create_machine_proxy(request):
 @server.PromptServer.instance.routes.get("/comfyui-deploy/comfyui-version")
 async def get_comfyui_version_proxy(request):
     api_url = request.rel_url.query.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3403,7 +3415,7 @@ async def get_comfyui_version_proxy(request):
 async def proxy_generate_upload_url(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3436,7 +3448,7 @@ async def proxy_generate_upload_url(request):
 async def proxy_initiate_multipart_upload(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3469,7 +3481,7 @@ async def proxy_initiate_multipart_upload(request):
 async def proxy_generate_part_upload_url(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3502,7 +3514,7 @@ async def proxy_generate_part_upload_url(request):
 async def proxy_complete_multipart_upload(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3535,7 +3547,7 @@ async def proxy_complete_multipart_upload(request):
 async def proxy_abort_multipart_upload(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(
@@ -3565,7 +3577,7 @@ async def proxy_abort_multipart_upload(request):
 async def proxy_add_model(request):
     data = await request.json()
     api_url = data.get("api_url", "https://api.comfydeploy.com")
-    auth_header = request.headers.get("Authorization")
+    auth_header = get_comfydeploy_auth_header(request)
 
     if not auth_header:
         return web.json_response(

@@ -34,7 +34,7 @@ export async function fetchSnapshot(getDataFn = null) {
             )}`,
             {
               headers: {
-                Authorization: `Bearer ${data.apiKey}`,
+                "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
               },
             }
           );

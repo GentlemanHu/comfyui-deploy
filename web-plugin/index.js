@@ -1270,7 +1270,7 @@ async function deployWorkflow() {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
-          Authorization: "Bearer " + apiKey,
+          "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
         },
       });
 
@@ -1422,7 +1422,7 @@ async function deployWorkflow() {
       body: JSON.stringify(body),
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + apiKey,
+        "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
       },
     });
 
@@ -1459,7 +1459,7 @@ async function deployWorkflow() {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
-          Authorization: "Bearer " + apiKey,
+          "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
         },
       });
 
@@ -2852,7 +2852,7 @@ api.fetchApi = async (route, options) => {
         return await fetch("/comfyui-deploy/run", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${info.cd_token}`,
+            "X-ComfyDeploy-Authorization": `Bearer ${info.cd_token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(data),
@@ -2877,7 +2877,7 @@ api.fetchApi = async (route, options) => {
       await fetch("/comfyui-deploy/interrupt", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${info.cd_token}`,
+          "X-ComfyDeploy-Authorization": `Bearer ${info.cd_token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(data),
