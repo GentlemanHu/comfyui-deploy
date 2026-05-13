@@ -490,6 +490,10 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
                     continue
 
 
+def is_comfyui_graph_workflow(workflow):
+    return isinstance(workflow, dict) and isinstance(workflow.get("nodes"), list)
+
+
 def apply_inputs_to_workflow(workflow_api: Any, inputs: Any, sid: str = None):
     if not isinstance(workflow_api, dict):
         logger.warning("Skipping input application: workflow_api is missing")
@@ -668,8 +672,10 @@ async def comfy_deploy_run(request):
         "client_id": "comfy_deploy_instance" if client_id is None else client_id,
         "prompt_id": prompt_id,
     }
-    if workflow is not None:
+    if is_comfyui_graph_workflow(workflow):
         prompt["extra_data"] = {"extra_pnginfo": {"workflow": workflow}}
+    elif workflow is not None:
+        logger.warning("Skipping invalid extra_pnginfo workflow: missing nodes")
 
     prompt_metadata[prompt_id] = SimplePrompt(
         status_endpoint=data.get("status_endpoint"),
@@ -744,8 +750,10 @@ async def stream_prompt(data, token):
         "client_id": "comfy_deploy_instance",  # api.client_id
         "prompt_id": prompt_id,
     }
-    if workflow is not None:
+    if is_comfyui_graph_workflow(workflow):
         prompt["extra_data"] = {"extra_pnginfo": {"workflow": workflow}}
+    elif workflow is not None:
+        logger.warning("Skipping invalid extra_pnginfo workflow: missing nodes")
 
     prompt_metadata[prompt_id] = SimplePrompt(
         status_endpoint=data.get("status_endpoint"),

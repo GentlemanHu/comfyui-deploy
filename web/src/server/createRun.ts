@@ -92,6 +92,18 @@ export const createRun = withServerPromise(
     const workflow_api = structuredClone(workflow_version_data.workflow_api);
     const workflow = structuredClone(workflow_version_data.workflow);
 
+    if (
+      machine.type === "classic" &&
+      (!workflow ||
+        typeof workflow !== "object" ||
+        !("nodes" in workflow) ||
+        !Array.isArray((workflow as { nodes?: unknown }).nodes))
+    ) {
+      throw new Error(
+        "This workflow version does not contain a full ComfyUI graph. Open it in ComfyUI and deploy a new version before running it on a Classic Machine.",
+      );
+    }
+
     applyExternalInputsToWorkflow(workflow_api, inputs);
 
     let prompt_id: string | undefined = undefined;
