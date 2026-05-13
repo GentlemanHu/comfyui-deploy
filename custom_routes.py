@@ -405,6 +405,15 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
                     False  # Add a flag to track if we should skip randomization
                 )
 
+                if (
+                    workflow_api[key].get("class_type") == "KSampler"
+                    and not workflow_nodes
+                ):
+                    logger.warning(
+                        f"Skipping KSampler seed randomization for node {node_id}: workflow graph is missing"
+                    )
+                    continue
+
                 for node in workflow_nodes:
                     if str(node["id"]) == node_id and node["type"] == "KSampler":
                         # Check if this node has widgets_values and if seed setting is not "fixed"
