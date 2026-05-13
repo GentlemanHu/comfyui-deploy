@@ -384,6 +384,14 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
     Args:
         workflow_api (dict): The workflow API dictionary to modify.
     """
+    if not isinstance(workflow_api, dict):
+        logger.warning("Skipping random seed application: workflow_api is missing")
+        return
+
+    workflow_nodes = []
+    if isinstance(workflow, dict) and isinstance(workflow.get("nodes"), list):
+        workflow_nodes = workflow["nodes"]
+
     for key in workflow_api:
         if "inputs" in workflow_api[key]:
             if "seed" in workflow_api[key]["inputs"]:
@@ -397,7 +405,7 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
                     False  # Add a flag to track if we should skip randomization
                 )
 
-                for node in workflow["nodes"]:
+                for node in workflow_nodes:
                     if str(node["id"]) == node_id and node["type"] == "KSampler":
                         # Check if this node has widgets_values and if seed setting is not "fixed"
                         if "widgets_values" in node and len(node["widgets_values"]) > 1:
@@ -474,6 +482,10 @@ def apply_random_seed_to_workflow(workflow_api, workflow):
 
 
 def apply_inputs_to_workflow(workflow_api: Any, inputs: Any, sid: str = None):
+    if not isinstance(workflow_api, dict):
+        logger.warning("Skipping input application: workflow_api is missing")
+        return
+
     # Loop through each of the inputs and replace them
     for key, value in workflow_api.items():
         if "inputs" in value:
@@ -646,8 +658,9 @@ async def comfy_deploy_run(request):
         "prompt": workflow_api,
         "client_id": "comfy_deploy_instance" if client_id is None else client_id,
         "prompt_id": prompt_id,
-        "extra_data": {"extra_pnginfo": {"workflow": workflow}},
     }
+    if workflow is not None:
+        prompt["extra_data"] = {"extra_pnginfo": {"workflow": workflow}}
 
     prompt_metadata[prompt_id] = SimplePrompt(
         status_endpoint=data.get("status_endpoint"),
@@ -721,8 +734,9 @@ async def stream_prompt(data, token):
         "prompt": workflow_api,
         "client_id": "comfy_deploy_instance",  # api.client_id
         "prompt_id": prompt_id,
-        "extra_data": {"extra_pnginfo": {"workflow": workflow}},
     }
+    if workflow is not None:
+        prompt["extra_data"] = {"extra_pnginfo": {"workflow": workflow}}
 
     prompt_metadata[prompt_id] = SimplePrompt(
         status_endpoint=data.get("status_endpoint"),

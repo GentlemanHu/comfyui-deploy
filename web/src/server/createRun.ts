@@ -90,12 +90,14 @@ export const createRun = withServerPromise(
       }
 
     const workflow_api = structuredClone(workflow_version_data.workflow_api);
+    const workflow = structuredClone(workflow_version_data.workflow);
 
     applyExternalInputsToWorkflow(workflow_api, inputs);
 
     let prompt_id: string | undefined = undefined;
     const shareData = {
       workflow_api_raw: workflow_api,
+      workflow,
       status_endpoint: `${origin}/api/update-run`,
       file_upload_endpoint: `${origin}/api/file-upload`,
     };
