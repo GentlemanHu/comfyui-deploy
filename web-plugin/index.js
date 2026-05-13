@@ -46,6 +46,60 @@ document.head.appendChild(styleSheet);
 
 const loadingIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="#888888" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg>`;
 
+function parseExternalEnumOptions(rawOptions, fallbackValue) {
+  if (!rawOptions || !String(rawOptions).trim()) {
+    return fallbackValue ? [fallbackValue] : [];
+  }
+
+  const raw = String(rawOptions).trim();
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(String);
+  } catch (error) {
+    // Keep supporting plain multiline input for hand-written External Enum nodes.
+  }
+
+  const separator = raw.includes("\n") ? /\r?\n/ : ",";
+  return raw
+    .split(separator)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function refreshExternalEnumNode(node) {
+  const defaultValueWidget = node.widgets?.find(
+    (widget) => widget.name === "default_value"
+  );
+  const optionsWidget = node.widgets?.find((widget) => widget.name === "options");
+
+  if (!defaultValueWidget || !optionsWidget) return;
+
+  const dynamicEnumOptions = parseExternalEnumOptions(
+    optionsWidget.value,
+    defaultValueWidget.value
+  );
+
+  defaultValueWidget.options.values = dynamicEnumOptions;
+  if (
+    dynamicEnumOptions.length > 0 &&
+    !dynamicEnumOptions.includes(defaultValueWidget.value)
+  ) {
+    defaultValueWidget.value = dynamicEnumOptions[0];
+  }
+
+  if (!optionsWidget.__comfyDeployEnumCallbackAttached) {
+    const originalCallback = optionsWidget.callback;
+    optionsWidget.callback = function (...args) {
+      const result = originalCallback?.apply(this, args);
+      refreshExternalEnumNode(node);
+      app.graph.setDirtyCanvas(true, true);
+      return result;
+    };
+    optionsWidget.__comfyDeployEnumCallbackAttached = true;
+  }
+}
+
 function sendEventToCD(event, data) {
   const message = {
     type: event,
@@ -349,6 +403,7 @@ async function convertToInput(node, widget, config) {
     console.log(options);
     inputNode.widgets.find((x) => x.name == "default_value").options.values =
       options;
+    refreshExternalEnumNode(inputNode);
   }
 
   app.graph.add(inputNode);
@@ -815,19 +870,7 @@ const ext = {
   async afterConfigureGraph() {
     app.graph.nodes.forEach((node) => {
       if (node.type === "ComfyUIDeployExternalEnum") {
-        const default_value_index = node.widgets.findIndex(
-          (x) => x.name === "default_value"
-        );
-        const options_index = node.widgets.findIndex(
-          (x) => x.name === "options"
-        );
-
-        var dynamic_enum_options = [node.widgets[default_value_index].value];
-        if (node.widgets[options_index].value) {
-          dynamic_enum_options = JSON.parse(node.widgets[options_index].value);
-        }
-        // console.log("dynamic_enum_options", dynamic_enum_options);
-        node.widgets[default_value_index].options.values = dynamic_enum_options;
+        refreshExternalEnumNode(node);
       }
     });
   },
