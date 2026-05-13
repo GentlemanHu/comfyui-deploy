@@ -30,12 +30,11 @@ export const clerkClient = {
     },
   },
   organizations: {
-    async getOrganization() {
+    async getOrganization(params?: { organizationId?: string }) {
       return {
-        id: localOrgId,
+        id: params?.organizationId || localOrgId,
         name: localOrgName,
       };
     },
   },
 };
-
