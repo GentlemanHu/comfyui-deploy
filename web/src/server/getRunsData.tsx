@@ -68,7 +68,7 @@ function replaceUrls(dataType: any[], dataId: string) {
   for (let j = 0; j < dataType.length; j++) {
     const element = dataType[j];
     element.url = replaceCDNUrl(
-      `${process.env.SPACES_ENDPOINT}/${process.env.SPACES_BUCKET}/outputs/runs/${dataId}/${element.filename}`,
+      `${process.env.SPACES_PUBLIC_ENDPOINT ?? process.env.SPACES_ENDPOINT}/${process.env.SPACES_BUCKET}/outputs/runs/${dataId}/${element.filename}`,
     );
   }
 }

@@ -27,19 +27,34 @@ services:
     ports:
       - "5481:80"
 
-  localstack:
-    image: localstack/localstack:latest
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     environment:
-      SERVICES: s3
-      AWS_ACCESS_KEY_ID: xyz
-      AWS_SECRET_ACCESS_KEY: aaa
-      DEFAULT_REGION: nyc3
+      MINIO_ROOT_USER: comfydeploy
+      MINIO_ROOT_PASSWORD: comfydeploy-secret
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    command: server /data --console-address ":9001"
     ports:
-      - "4566:4566"
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - ./web/aws:/etc/localstack/init/ready.d:ro
-      - ./web/aws:/app/web/aws:ro
-      - comfydeploy-localstack:/var/lib/localstack
+      - comfydeploy-minio:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 comfydeploy comfydeploy-secret; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc alias set local http://minio:9000 comfydeploy comfydeploy-secret &&
+      mc mb --ignore-existing local/comfyui-deploy &&
+      mc anonymous set download local/comfyui-deploy &&
+      exit 0"
 
   web:
     image: oven/bun:1.1
@@ -50,12 +65,13 @@ services:
       POSTGRES_WS_PROXY: ${POSTGRES_WS_PROXY:-pg_proxy:80/v1}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
-      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-http://localstack:4566}
-      SPACES_ENDPOINT_CDN: ${SPACES_ENDPOINT_CDN:-http://localhost:4566}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-http://minio:9000}
+      SPACES_PUBLIC_ENDPOINT: ${SPACES_PUBLIC_ENDPOINT:-http://localhost:9000}
+      SPACES_ENDPOINT_CDN: ${SPACES_ENDPOINT_CDN:-http://localhost:9000}
       SPACES_REGION: ${SPACES_REGION:-nyc3}
       SPACES_BUCKET: ${SPACES_BUCKET:-comfyui-deploy}
-      SPACES_KEY: ${SPACES_KEY:-xyz}
-      SPACES_SECRET: ${SPACES_SECRET:-aaa}
+      SPACES_KEY: ${SPACES_KEY:-comfydeploy}
+      SPACES_SECRET: ${SPACES_SECRET:-comfydeploy-secret}
       SPACES_CDN_DONT_INCLUDE_BUCKET: ${SPACES_CDN_DONT_INCLUDE_BUCKET:-false}
       SPACES_CDN_FORCE_PATH_STYLE: ${SPACES_CDN_FORCE_PATH_STYLE:-true}
       MODAL_BUILDER_URL: ${MODAL_BUILDER_URL:-}
@@ -72,8 +88,8 @@ services:
         condition: service_healthy
       pg_proxy:
         condition: service_started
-      localstack:
-        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "3000:3000"
     volumes:
@@ -83,6 +99,6 @@ services:
 
 volumes:
   comfydeploy-postgres:
-  comfydeploy-localstack:
+  comfydeploy-minio:
   comfydeploy-bun-cache:
   comfydeploy-node-modules:

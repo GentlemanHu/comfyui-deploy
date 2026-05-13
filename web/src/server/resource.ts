@@ -18,6 +18,16 @@ const s3Client = new S3({
   forcePathStyle: process.env.SPACES_CDN_FORCE_PATH_STYLE === "true",
 });
 
+const publicS3Client = new S3({
+  endpoint: process.env.SPACES_PUBLIC_ENDPOINT ?? process.env.SPACES_ENDPOINT,
+  region: process.env.SPACES_REGION,
+  credentials: {
+    accessKeyId: process.env.SPACES_KEY!,
+    secretAccessKey: process.env.SPACES_SECRET!,
+  },
+  forcePathStyle: process.env.SPACES_CDN_FORCE_PATH_STYLE === "true",
+});
+
 export type ResourceObject = {
   resourceBucket: string;
   resourceId: string;
@@ -41,7 +51,7 @@ export async function handleResourceUpload(
     p.ACL = "public-read";
   }
 
-  const url = await getSignedUrl(s3Client, new PutObjectCommand(p), {
+  const url = await getSignedUrl(publicS3Client, new PutObjectCommand(p), {
     expiresIn: 5 * 60,
   });
 
@@ -71,7 +81,7 @@ export async function handleResourceDownload(
   resource: Partial<ResourceObject>
 ): Promise<string> {
   const url = await getSignedUrl(
-    s3Client,
+    publicS3Client,
     new GetObjectCommand({
       Key: resource.resourceId,
       Bucket: resource.resourceBucket,
