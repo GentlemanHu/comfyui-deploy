@@ -16,6 +16,7 @@ const withMDX = nextMDX({
 const nextConfig = {
   pageExtensions: ["js", "jsx", "ts", "tsx", "mdx"],
   output: "standalone",
+  staticPageGenerationTimeout: 300,
   eslint: {
     ignoreDuringBuilds: true,
   },
