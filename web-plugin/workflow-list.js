@@ -12,6 +12,19 @@ let workflowsState = {
 // Make workflowsState accessible globally
 window.workflowsState = workflowsState;
 
+function getComfyDeployApiBase(data) {
+  return String(
+    data.apiUrl || data.endpoint || "https://api.comfydeploy.com"
+  ).replace(/\/+$/, "");
+}
+
+function getComfyDeployApiHeaders(data) {
+  return {
+    Authorization: `Bearer ${data.apiKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
 // Helper: ensure a `ComfyDeploy` node exists and is updated with correct version
 function ensureComfyDeployNode({ name, id, version }) {
   if (!window.app || !window.app.graph) {
@@ -120,19 +133,17 @@ async function fetchWorkflowVersions(
 ) {
   const data = getData();
   const params = new URLSearchParams({
-    workflow_id: workflowId,
     offset: String(offset),
     limit: String(limit),
-    api_url: data.apiUrl || "https://api.comfydeploy.com",
     ...(search && { search }),
   });
-  const res = await fetch(`/comfyui-deploy/workflow/versions?${params}`, {
-    method: "GET",
-    headers: {
-      "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await fetch(
+    `${getComfyDeployApiBase(data)}/api/workflow/${workflowId}/versions?${params}`,
+    {
+      method: "GET",
+      headers: getComfyDeployApiHeaders(data),
+    }
+  );
   if (!res.ok) return [];
   const versions = await res.json();
   return Array.isArray(versions) ? versions : [];
@@ -140,20 +151,49 @@ async function fetchWorkflowVersions(
 
 async function fetchWorkflowVersionData(getData, workflowId, version) {
   const data = getData();
-  const params = new URLSearchParams({
-    workflow_id: workflowId,
-    version: String(version),
-    api_url: data.apiUrl || "https://api.comfydeploy.com",
-  });
-  const res = await fetch(`/comfyui-deploy/workflow/version?${params}`, {
-    method: "GET",
-    headers: {
-      "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await fetch(
+    `${getComfyDeployApiBase(data)}/api/workflow/${workflowId}/version/${version}`,
+    {
+      method: "GET",
+      headers: getComfyDeployApiHeaders(data),
+    }
+  );
   if (!res.ok) throw new Error(`Failed to fetch workflow version ${version}`);
   return await res.json();
+}
+
+async function fetchWorkflows(getData, offset = 0, limit = 20, search = "") {
+  try {
+    const data = getData();
+    if (!data.apiKey) {
+      throw new Error("API key not configured");
+    }
+
+    const params = new URLSearchParams({
+      offset: offset.toString(),
+      limit: limit.toString(),
+      ...(search && { search }),
+    });
+
+    const response = await fetch(
+      `${getComfyDeployApiBase(data)}/api/workflows?${params}`,
+      {
+        method: "GET",
+        headers: getComfyDeployApiHeaders(data),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch workflows: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log("result", result);
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error("Error fetching workflows:", error);
+    return [];
+  }
 }
 
 // Shared function to create workflow card HTML template
@@ -577,41 +617,6 @@ function renderCurrentWorkflowCard(element, getData) {
   }
 }
 
-async function fetchWorkflows(getData, offset = 0, limit = 20, search = "") {
-  try {
-    const data = getData();
-    if (!data.apiKey) {
-      throw new Error("API key not configured");
-    }
-
-    const params = new URLSearchParams({
-      offset: offset.toString(),
-      limit: limit.toString(),
-      api_url: data.apiUrl || "https://api.comfydeploy.com",
-      ...(search && { search }),
-    });
-
-    const response = await fetch(`/comfyui-deploy/workflows?${params}`, {
-      method: "GET",
-      headers: {
-        "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch workflows: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log("result", result);
-    return Array.isArray(result) ? result : [];
-  } catch (error) {
-    console.error("Error fetching workflows:", error);
-    return [];
-  }
-}
-
 function createWorkflowItem(workflow, getTimeAgo, getData) {
   const li = document.createElement("li");
   let loadingToast = null;
@@ -647,18 +652,13 @@ function createWorkflowItem(workflow, getTimeAgo, getData) {
         life: 3000,
       });
 
-      const params = new URLSearchParams({
-        workflow_id: workflow.id,
-        api_url: data.apiUrl || "https://api.comfydeploy.com",
-      });
-
-      const response = await fetch(`/comfyui-deploy/workflow?${params}`, {
-        method: "GET",
-        headers: {
-          "X-ComfyDeploy-Authorization": `Bearer ${data.apiKey}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await fetch(
+        `${getComfyDeployApiBase(data)}/api/workflow/${workflow.id}`,
+        {
+          method: "GET",
+          headers: getComfyDeployApiHeaders(data),
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Failed to fetch workflow: ${response.status}`);

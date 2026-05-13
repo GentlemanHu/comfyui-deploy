@@ -14,6 +14,43 @@ import { initializeModelManager } from "./model-manager.js";
 const COMFY_DEPLOY_PLUGIN_VERSION = "2026-05-13-basic-auth-safe-2";
 console.info(`[ComfyDeploy] plugin loaded: ${COMFY_DEPLOY_PLUGIN_VERSION}`);
 
+function getComfyDeployApiBase(data) {
+  return String(
+    data.apiUrl || data.endpoint || "https://api.comfydeploy.com"
+  ).replace(/\/+$/, "");
+}
+
+function getComfyDeployApiHeaders(apiKey) {
+  return {
+    Authorization: "Bearer " + apiKey,
+    "Content-Type": "application/json",
+  };
+}
+
+async function getCurrentSnapshotForUpload() {
+  try {
+    const response = await fetch("/snapshot/get_current", {
+      credentials: "include",
+    });
+    if (!response.ok) throw new Error(`Snapshot failed: ${response.status}`);
+    const snapshot = await response.json();
+    return {
+      comfyui: snapshot.comfyui || "unknown",
+      git_custom_nodes: snapshot.git_custom_nodes || {},
+      file_custom_nodes: Array.isArray(snapshot.file_custom_nodes)
+        ? snapshot.file_custom_nodes
+        : [],
+    };
+  } catch (error) {
+    console.warn("ComfyDeploy: using minimal snapshot fallback", error);
+    return {
+      comfyui: "unknown",
+      git_custom_nodes: {},
+      file_custom_nodes: [],
+    };
+  }
+}
+
 function normalizeComfyDeployProxyRequest(input, init = {}) {
   const requestUrl = typeof input === "string" ? input : input?.url || "";
   const isComfyDeployProxy =
@@ -1293,6 +1330,8 @@ async function deployWorkflow() {
   if (!ok) return;
 
   const prompt = await app.graphToPrompt();
+  const snapshot = await getCurrentSnapshotForUpload();
+  const apiBase = getComfyDeployApiBase({ endpoint, apiUrl });
 
   console.log(prompt);
 
@@ -1304,20 +1343,17 @@ async function deployWorkflow() {
       loadingDialog.showLoading("Saving changes");
 
       const body = {
-        api_url: apiUrl,
         workflow: prompt.workflow,
         workflow_id: workflow_id,
         workflow_api: prompt.output,
+        snapshot,
         comment: text,
       };
 
-      let data = await fetch("/comfyui-deploy/workflow/version", {
+      let data = await fetch(`${apiBase}/api/workflow`, {
         method: "POST",
         body: JSON.stringify(body),
-        headers: {
-          "Content-Type": "application/json",
-          "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
-        },
+        headers: getComfyDeployApiHeaders(apiKey),
       });
 
       if (data.status !== 200) {
@@ -1453,23 +1489,20 @@ async function deployWorkflow() {
 
   try {
     const body = {
-      name: workflow_name,
-      workflow_json: prompt.workflow,
+      workflow_name,
+      workflow: prompt.workflow,
       workflow_api: prompt.output,
-      api_url: apiUrl,
+      snapshot,
     };
     const machineId = localStorage.getItem("comfy_deploy_machine_id");
     if (machineId) {
       body.machine_id = machineId;
     }
     console.log(body);
-    let data = await fetch("/comfyui-deploy/workflow", {
+    let data = await fetch(`${apiBase}/api/workflow`, {
       method: "POST",
       body: JSON.stringify(body),
-      headers: {
-        "Content-Type": "application/json",
-        "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
-      },
+      headers: getComfyDeployApiHeaders(apiKey),
     });
 
     console.log(data);
@@ -1493,20 +1526,17 @@ async function deployWorkflow() {
       const prompt_with_workflow_id = await app.graphToPrompt();
 
       const body = {
-        api_url: apiUrl,
         workflow: prompt_with_workflow_id.workflow,
         workflow_id: data.workflow_id,
         workflow_api: prompt_with_workflow_id.output,
+        snapshot,
         comment: "chore: apply workflow id",
       };
 
-      let new_version_data = await fetch("/comfyui-deploy/workflow/version", {
+      let new_version_data = await fetch(`${apiBase}/api/workflow`, {
         method: "POST",
         body: JSON.stringify(body),
-        headers: {
-          "Content-Type": "application/json",
-          "X-ComfyDeploy-Authorization": "Bearer " + apiKey,
-        },
+        headers: getComfyDeployApiHeaders(apiKey),
       });
 
       if (new_version_data.status !== 200) {

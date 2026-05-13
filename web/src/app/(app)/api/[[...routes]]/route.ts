@@ -9,6 +9,7 @@ import { app } from "../../../../routes/app";
 import { registerWorkflowUploadRoute } from "@/routes/registerWorkflowUploadRoute";
 import { registerGetAuthResponse } from "@/routes/registerGetAuthResponse";
 import { registerGetWorkflowRoute } from "@/routes/registerGetWorkflow";
+import { registerWorkflowBrowserRoutes } from "@/routes/registerWorkflowBrowserRoutes";
 import { cors } from "hono/cors";
 export const dynamic = "force-dynamic";
 export const maxDuration = 10; // 5 minutes
@@ -59,6 +60,8 @@ const corsHandler = cors({
 // CORS Check
 app.use("/workflow", corsHandler, checkAuth);
 app.use("/workflow-version/*", corsHandler, checkAuth);
+app.use("/workflows", corsHandler, checkAuth);
+app.use("/workflow/*", corsHandler, checkAuth);
 
 // create run endpoint
 registerCreateRunRoute(app);
@@ -72,6 +75,7 @@ registerGetAuthResponse(app);
 
 registerWorkflowUploadRoute(app);
 registerGetWorkflowRoute(app);
+registerWorkflowBrowserRoutes(app);
 
 // The OpenAPI documentation will be available at /doc
 app.doc("/doc", {
