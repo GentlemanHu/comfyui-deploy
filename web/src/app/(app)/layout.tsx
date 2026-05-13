@@ -5,11 +5,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Metadata } from "next";
 import meta from "next-gen/config";
 import PlausibleProvider from "next-plausible";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 
-const PostHogPageView = dynamic(() => import("./PostHogPageView"), {
+const PostHogPageView = nextDynamic(() => import("./PostHogPageView"), {
   ssr: false,
 });
 
