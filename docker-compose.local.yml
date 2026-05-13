@@ -89,7 +89,8 @@ services:
     command: >
       sh -lc "bun install &&
       SSL=false LOCAL=true bun run migrate.mts &&
-      bun run dev --hostname 0.0.0.0"
+      bun run build &&
+      bun run start --hostname 0.0.0.0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,9 +104,11 @@ services:
       - ./web:/app
       - comfydeploy-bun-cache:/root/.bun
       - comfydeploy-node-modules:/app/node_modules
+      - comfydeploy-next-cache:/app/.next/cache
 
 volumes:
   comfydeploy-postgres:
   comfydeploy-minio:
   comfydeploy-bun-cache:
   comfydeploy-node-modules:
+  comfydeploy-next-cache:

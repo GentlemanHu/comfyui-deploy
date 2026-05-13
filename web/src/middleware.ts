@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const publicPrefixes = ["/api", "/docs", "/share"];
+const publicPrefixes = ["/api"];
 
 function isPublicPath(pathname: string) {
   return publicPrefixes.some(
