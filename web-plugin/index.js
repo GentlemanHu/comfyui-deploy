@@ -2149,6 +2149,10 @@ function getData(environment) {
   };
 }
 
+function normalizeEndpoint(endpoint) {
+  return String(endpoint || "").replace(/\/+$/, "");
+}
+
 /**
  * Retrieves deployment data from local storage or defaults.
  * @param {{endpoint: string, apiKey: string, displayName: string, environment?: string}} [data] - The environment to get the data for.
@@ -2263,8 +2267,13 @@ export class ConfigDialog extends ComfyDialog {
     const deployOption = this.container.querySelector("#deployOption").value;
     localStorage.setItem("comfy_deploy_env", deployOption);
 
-    const endpoint = this.container.querySelector("#endpoint").value;
+    const endpoint = normalizeEndpoint(this.container.querySelector("#endpoint").value);
     const apiKey = api_key ?? this.container.querySelector("#apiKey").value;
+    const defaultData = getData(deployOption);
+    const apiUrl =
+      endpoint && endpoint !== normalizeEndpoint(defaultData.endpoint)
+        ? endpoint
+        : defaultData.apiUrl;
 
     if (!displayName) {
       if (apiKey != getData().apiKey) {
@@ -2276,7 +2285,7 @@ export class ConfigDialog extends ComfyDialog {
 
     saveData({
       endpoint,
-      apiUrl: getData(deployOption).apiUrl,
+      apiUrl,
       apiKey,
       displayName,
       environment: deployOption,
@@ -2520,7 +2529,8 @@ export class ConfigDialog extends ComfyDialog {
       const data = getData();
 
       const uuid = crypto.randomUUID();
-      window.open(data.endpoint + "/auth/request/" + uuid, "_blank");
+      const endpoint = normalizeEndpoint(data.endpoint);
+      window.open(endpoint + "/auth/request/" + uuid, "_blank");
 
       this.timeout = setTimeout(() => {
         clearInterval(this.poll);
@@ -2531,11 +2541,7 @@ export class ConfigDialog extends ComfyDialog {
       }, 30000); // Stop polling after 30 seconds
 
       this.poll = setInterval(() => {
-        fetch(
-          `/comfyui-deploy/auth-response?request_id=${uuid}&api_url=${encodeURIComponent(
-            data.apiUrl
-          )}`
-        )
+        fetch(`${endpoint}/api/auth-response/${uuid}`)
           .then((response) => response.json())
           .then(async (json) => {
             if (json.api_key) {

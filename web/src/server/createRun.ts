@@ -6,7 +6,13 @@ import type {
   WorkflowRunOriginType,
   WorkflowVersionType,
 } from "@/db/schema";
-import { machinesTable, workflowRunsTable } from "@/db/schema";
+import {
+  machinesTable,
+  workflowRunsTable,
+  workflowVersionTable,
+} from "@/db/schema";
+import type { ExternalInputValue } from "@/lib/externalInputs";
+import { applyExternalInputsToWorkflow } from "@/lib/externalInputs";
 import type { APIKeyUserType } from "@/server/APIKeyBodyRequest";
 import { getRunsData } from "@/server/getRunsData";
 import { ComfyAPI_Run } from "@/types/ComfyAPI_Run";
@@ -30,7 +36,7 @@ export const createRun = withServerPromise(
     origin: string;
     workflow_version_id: string | WorkflowVersionType;
     machine_id: string | MachineType;
-    inputs?: Record<string, string | number>;
+    inputs?: Record<string, ExternalInputValue>;
     runOrigin?: WorkflowRunOriginType;
     apiUser?: APIKeyUserType;
   }) => {
@@ -51,7 +57,7 @@ export const createRun = withServerPromise(
     const workflow_version_data =
       typeof workflow_version_id === "string"
         ? await db.query.workflowVersionTable.findFirst({
-            where: eq(workflowRunsTable.id, workflow_version_id),
+            where: eq(workflowVersionTable.id, workflow_version_id),
             with: {
               workflow: {
                 columns: {
@@ -83,23 +89,9 @@ export const createRun = withServerPromise(
         }
       }
 
-    const workflow_api = workflow_version_data.workflow_api;
+    const workflow_api = structuredClone(workflow_version_data.workflow_api);
 
-    // Replace the inputs
-    if (inputs && workflow_api) {
-      for (const key in inputs) {
-        Object.entries(workflow_api).forEach(([_, node]) => {
-          if (node.inputs["input_id"] === key) {
-            node.inputs["input_id"] = inputs[key];
-            // Fix for external text default value
-            if (node.class_type == "ComfyUIDeployExternalText") {
-              node.inputs["default_value"] = inputs[key];
-            }
-          }
-
-        });
-      }
-    }
+    applyExternalInputsToWorkflow(workflow_api, inputs);
 
     let prompt_id: string | undefined = undefined;
     const shareData = {

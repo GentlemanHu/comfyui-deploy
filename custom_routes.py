@@ -505,7 +505,12 @@ def apply_inputs_to_workflow(workflow_api: Any, inputs: Any, sid: str = None):
                 if value["class_type"] == "ComfyUIDeployExternalLora":
                     value["inputs"]["lora_url"] = new_value
 
-                if value["class_type"] == "ComfyUIDeployExternalSlider":
+                if (
+                    value["class_type"] == "ComfyUIDeployExternalNumber"
+                    or value["class_type"] == "ComfyUIDeployExternalNumberInt"
+                    or value["class_type"] == "ComfyUIDeployExternalNumberSlider"
+                    or value["class_type"] == "ComfyUIDeployExternalNumberSliderInt"
+                ):
                     value["inputs"]["default_value"] = new_value
 
                 if value["class_type"] == "ComfyUIDeployExternalBoolean":
@@ -3023,7 +3028,7 @@ async def auth_response_proxy(request):
     if not request_id:
         return web.json_response({"error": "request_id is required"}, status=400)
 
-    target_url = f"{api_url}/api/platform/comfyui/auth-response?request_id={request_id}"
+    target_url = f"{api_url.rstrip('/')}/api/auth-response/{request_id}"
 
     try:
         await ensure_client_session()

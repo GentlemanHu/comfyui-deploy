@@ -2,8 +2,8 @@
 
 import { getInputsFromWorkflow } from "../lib/getInputsFromWorkflow";
 import { getWorkflowVersionFromVersionIndex } from "./VersionSelect";
-import { customInputNodes } from "./customInputNodes";
 import { Badge } from "@/components/ui/badge";
+import { getExternalInputDisplayType } from "@/lib/externalInputs";
 import {
   Tooltip,
   TooltipContent,
@@ -35,7 +35,7 @@ export function VersionDetails({
           <div className="flex flex-col gap-2">
             {inputs.map((value) => {
               if (!value || !value.class_type) return <> </>;
-              const nodeType = customInputNodes[value.class_type];
+              const nodeType = getExternalInputDisplayType(value.class_type);
               if (nodeType) {
                 const input_id = value.input_id;
                 const defaultValue = value.default_value;

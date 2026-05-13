@@ -203,7 +203,7 @@ function formatCode(
       `inputs: ${JSON.stringify(
         Object.fromEntries(
           inputs.map((x) => {
-            return [x?.input_id, ""];
+            return [x?.input_id, x?.default_value ?? ""];
           }),
         ),
         null,

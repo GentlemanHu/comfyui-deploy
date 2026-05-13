@@ -7,6 +7,7 @@ import { LoadingIcon } from "@/components/LoadingIcon";
 import AutoForm, { AutoFormSubmit } from "@/components/ui/auto-form";
 import { Button } from "@/components/ui/button";
 import type { getInputsFromWorkflow } from "@/lib/getInputsFromWorkflow";
+import type { ExternalInputValue } from "@/lib/externalInputs";
 import { createRun } from "@/server/createRun";
 import { useAuth, useClerk } from "@/lib/localClientAuth";
 import { Play } from "lucide-react";
@@ -22,7 +23,7 @@ export function RunWorkflowInline({
   workflow_version_id: string;
   machine_id: string;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, ExternalInputValue>>({});
   const [isLoading, setIsLoading] = useState(false);
 
   const user = useAuth();

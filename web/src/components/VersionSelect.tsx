@@ -56,6 +56,7 @@ import useSWR from "swr";
 import type { z } from "zod";
 import { create } from "zustand";
 import { workflowVersionInputsToZod } from "../lib/workflowVersionInputsToZod";
+import type { ExternalInputValue } from "@/lib/externalInputs";
 import { callServerPromise } from "./callServerPromise";
 import fetcher from "./fetcher";
 import { ButtonAction } from "@/components/ButtonActionLoader";
@@ -257,7 +258,7 @@ export function RunWorkflowButton({
   const [machine] = useSelectedMachine(machines);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, ExternalInputValue>>({});
   const [open, setOpen] = useState(false);
 
   const schema = useMemo(() => {
