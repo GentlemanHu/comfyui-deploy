@@ -7,7 +7,9 @@ const isDevContainer = process.env.REMOTE_CONTAINERS !== undefined;
 // if we're running locally
 if (process.env.VERCEL_ENV !== "production") {
   // Set the WebSocket proxy to work with the local instance
-  if (isDevContainer) {
+  if (process.env.POSTGRES_WS_PROXY) {
+    neonConfig.wsProxy = () => process.env.POSTGRES_WS_PROXY!;
+  } else if (isDevContainer) {
     // Running inside a VS Code devcontainer
     neonConfig.wsProxy = (host) => "host.docker.internal:5481/v1";
   } else {
