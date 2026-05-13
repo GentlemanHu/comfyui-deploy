@@ -11,6 +11,27 @@ import {
 import { initializeMachineManager } from "./machine-manager.js";
 import { initializeModelManager } from "./model-manager.js";
 
+const COMFY_DEPLOY_PLUGIN_VERSION = "2026-05-13-basic-auth-safe";
+console.info(`[ComfyDeploy] plugin loaded: ${COMFY_DEPLOY_PLUGIN_VERSION}`);
+
+if (!window.__comfyDeployFetch401TracerInstalled) {
+  window.__comfyDeployFetch401TracerInstalled = true;
+  const originalWindowFetch = window.fetch.bind(window);
+  window.fetch = async (input, init = {}) => {
+    const response = await originalWindowFetch(input, init);
+    if (response.status === 401 || response.status === 403) {
+      const requestUrl =
+        typeof input === "string" ? input : input?.url || String(input);
+      console.error("[ComfyDeploy] HTTP auth failed", {
+        status: response.status,
+        url: requestUrl,
+        headers: init?.headers || {},
+      });
+    }
+    return response;
+  };
+}
+
 const styles = `
 .comfydeploy-menu-item {
     background: linear-gradient(to right, rgba(74, 144, 226, 0.9), rgba(103, 178, 111, 0.9)) !important;
