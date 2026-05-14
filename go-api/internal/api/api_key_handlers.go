@@ -54,6 +54,23 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+func (s *Server) getAPIKey(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	id := chi.URLParam(r, "api_key_id")
+	var item apiKeyRecord
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		SELECT id, name, key, revoked, created_at, updated_at
+		FROM comfyui_deploy.api_keys
+		WHERE id = $1
+		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
+	`, id, user.OrgID, user.UserID).Scan(&item.ID, &item.Name, &item.Key, &item.Revoked, &item.CreatedAt, &item.UpdatedAt)
+	if notFoundOrInternal(w, err, "api key not found") {
+		return
+	}
+	item.MaskedKey = maskAPIKey(item.Key)
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req createAPIKeyRequest
 	if err := readJSON(r, &req); err != nil {

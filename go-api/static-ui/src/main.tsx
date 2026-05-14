@@ -198,8 +198,8 @@ function APIKeyTable({ data, onChanged }: { data: APIKey[]; onChanged: () => Pro
     selectColumn<APIKey>(),
     { accessorKey: "name", header: ({ column }) => <SortButton column={column} label="Name" />, cell: ({ row }) => row.original.name },
     { accessorKey: "endpoint", header: () => <div className="text-left">Endpoint</div>, cell: ({ row }) => <div className="text-left font-medium">{row.original.endpoint}</div> },
-    { accessorKey: "date", sortingFn: "datetime", header: ({ column }) => <SortButton column={column} label="Update Date" right />, cell: ({ row }) => <div className="capitalize text-right">{getRelativeTime(row.original.created_at)}</div> },
-    { id: "actions", cell: ({ row }) => <RowMenu items={[{ label: "Delete API Key", destructive: true, action: async () => { await api(`/api/api-keys/${row.original.id}`, { method: "DELETE" }); await onChanged(); } }]} /> },
+    { accessorKey: "date", sortingFn: "datetime", header: ({ column }) => <SortButton column={column} label="Update Date" right />, cell: ({ row }) => <div className="capitalize text-right">{getRelativeTime(row.original.updated_at)}</div> },
+    { id: "actions", cell: ({ row }) => <APIKeyActions item={row.original} onChanged={onChanged} /> },
   ], [onChanged]);
   return (
     <>
@@ -212,6 +212,54 @@ function APIKeyTable({ data, onChanged }: { data: APIKey[]; onChanged: () => Pro
         </div>
       </div>
       <DataTable data={data} columns={columns} filterColumn="name" filterPlaceholder="Filter keys..." />
+    </>
+  );
+}
+
+function APIKeyActions({ item, onChanged }: { item: APIKey; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [fullKey, setFullKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const loadKey = async () => {
+    setLoading(true);
+    try {
+      const result = await api<APIKey>(`/api/api-keys/${item.id}`);
+      setFullKey(result.key ?? "");
+      setOpen(true);
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <>
+      <RowMenu
+        items={[
+          { label: "View API Key", action: loadKey, silent: true },
+          { label: "Delete API Key", destructive: true, action: async () => { await api(`/api/api-keys/${item.id}`, { method: "DELETE" }); await onChanged(); } },
+        ]}
+      />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{item.name}</DialogTitle>
+            <DialogDescription>Copy this API key for workflow upload and API runs.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <div className="text-sm font-medium">API Key</div>
+            <div className="flex items-center gap-2 rounded-md border p-2">
+              <code className="truncate text-xs">{loading ? "Loading..." : fullKey}</code>
+              <Button size="sm" variant="outline" disabled={!fullKey} onClick={() => navigator.clipboard.writeText(fullKey)}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -432,6 +480,7 @@ function APIKeyDialog({ onChanged }: { onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [created, setCreated] = useState("");
+  const [saving, setSaving] = useState(false);
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => {
       setOpen(nextOpen);
@@ -449,7 +498,20 @@ function APIKeyDialog({ onChanged }: { onChanged: () => Promise<void> }) {
           {created ? (
             <Button type="button" onClick={() => setOpen(false)}>Close</Button>
           ) : (
-            <Button onClick={async () => { const defaultName = name || "My API Key"; const key = await api<APIKey>("/api/api-keys", { method: "POST", body: JSON.stringify({ name: defaultName }) }); setCreated(key.key ?? ""); setName(defaultName); await onChanged(); }}>Create</Button>
+            <Button disabled={saving} onClick={async () => {
+              setSaving(true);
+              try {
+                const defaultName = name || "My API Key";
+                const key = await api<APIKey>("/api/api-keys", { method: "POST", body: JSON.stringify({ name: defaultName }) });
+                setCreated(key.key ?? "");
+                setName(defaultName);
+                await onChanged();
+              } catch (error) {
+                toast.error(String(error));
+              } finally {
+                setSaving(false);
+              }
+            }}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Create</Button>
           )}
         </DialogFooter>
       </DialogContent>

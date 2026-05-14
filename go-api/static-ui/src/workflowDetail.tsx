@@ -24,6 +24,11 @@ export function WorkflowDetail({ workflowID }: { workflowID: string }) {
   const reloadAll = async () => {
     await Promise.all([workflow.reload(), versions.reload(), deployments.reload(), runs.reload(), machines.reload()]);
   };
+  useEffect(() => {
+    if (!(runs.data ?? []).some((run) => run.status === "running" || run.status === "not-started" || run.status === "preparing")) return;
+    const timer = window.setInterval(() => void runs.reload(), 2000);
+    return () => window.clearInterval(timer);
+  }, [runs.data]);
   const versionOptions = versions.data ?? [];
   const machineOptions = machines.data ?? [];
   const activeVersion = versionOptions.find((item) => item.id === (selectedVersionID || versionOptions[0]?.id)) ?? versionOptions[0];
@@ -46,7 +51,7 @@ export function WorkflowDetail({ workflowID }: { workflowID: string }) {
               <select className="h-10 w-[180px] rounded-md border bg-background px-3 text-start" value={activeMachineID} onChange={(e) => setSelectedMachineID(e.target.value)}>
                 {machineOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-              <RunWorkflowButton deploymentID={findDeploymentID(deployments.data ?? [], activeVersion?.id, activeMachineID)} workflowVersion={activeVersion} />
+              <RunWorkflowButton deploymentID={findDeploymentID(deployments.data ?? [], activeVersion?.id, activeMachineID)} workflowVersion={activeVersion} onCreated={runs.reload} />
               <CreateDeploymentMenu workflowID={workflowID} versionID={activeVersion?.id} machineID={activeMachineID} onCreated={deployments.reload} />
               <CreateShareButton workflowID={workflowID} versions={versionOptions} machines={machineOptions} onCreated={deployments.reload} presetVersionID={activeVersion?.id} presetMachineID={activeMachineID} />
               <CopyWorkflowVersion workflow={workflowGraph} workflowAPI={activeVersion?.workflow_api} workflowID={workflowID} version={activeVersion?.version} />
@@ -183,7 +188,7 @@ function DeploymentDialog({ workflowID, versions, machines, onCreated, environme
   );
 }
 
-function RunWorkflowButton({ deploymentID, workflowVersion }: { deploymentID?: string; workflowVersion?: WorkflowVersion }) {
+function RunWorkflowButton({ deploymentID, workflowVersion, onCreated }: { deploymentID?: string; workflowVersion?: WorkflowVersion; onCreated: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const inputs = useMemo(() => getInputsFromWorkflow((workflowVersion?.workflow_api as Record<string, any>) || undefined), [workflowVersion]);
@@ -205,6 +210,7 @@ function RunWorkflowButton({ deploymentID, workflowVersion }: { deploymentID?: s
             setSaving(true);
             try {
               await api(`/api/run`, { method: "POST", body: JSON.stringify({ deployment_id: deploymentID, inputs: Object.keys(values).length > 0 ? values : undefined }) });
+              await onCreated();
               toast.success("Run created");
               setOpen(false);
             } catch (error) {
@@ -439,22 +445,20 @@ function RunRow({ run }: { run: Run }) {
   const [open, setOpen] = useState(false);
   const outputs = useResource<RunOutput[]>(open ? `/api/run/${run.id}/outputs` : null);
   useEffect(() => {
-    if (!open || run.status !== "running") return;
+    if (!open || !["running", "not-started", "preparing"].includes(run.status)) return;
     const timer = window.setInterval(() => void outputs.reload(), 2000);
     return () => window.clearInterval(timer);
   }, [open, run.status]);
   const previewItems = (outputs.data ?? []).flatMap((item) => extractMediaItems(item.data));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild className="appearance-none hover:cursor-pointer">
-        <TableRow>
-          <TableCell className="truncate font-medium">{run.machine_name ?? run.machine_id ?? "-"}</TableCell>
-          <TableCell className="truncate">{getRelativeTime(run.created_at)}</TableCell>
-          <TableCell>{run.version ?? "-"}</TableCell>
-          <TableCell><span className="inline-flex items-center gap-x-1.5 rounded-md border px-2 py-0.5 text-sm font-medium text-foreground truncate">{run.origin}</span></TableCell>
-          <TableCell className="text-right"><span className={statusClassName(run.status)}>{run.status}</span></TableCell>
-        </TableRow>
-      </DialogTrigger>
+      <TableRow className="cursor-pointer" onClick={() => setOpen(true)}>
+        <TableCell className="truncate font-medium">{run.machine_name ?? run.machine_id ?? "-"}</TableCell>
+        <TableCell className="truncate">{getRelativeTime(run.created_at)}</TableCell>
+        <TableCell>{run.version ?? "-"}</TableCell>
+        <TableCell><span className="inline-flex items-center gap-x-1.5 rounded-md border px-2 py-0.5 text-sm font-medium text-foreground truncate">{run.origin}</span></TableCell>
+        <TableCell className="text-right"><span className={statusClassName(run.status)}>{run.status}</span></TableCell>
+      </TableRow>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>Run outputs</DialogTitle>
@@ -464,6 +468,11 @@ function RunRow({ run }: { run: Run }) {
           <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : previewItems.length > 0 ? (
           <MediaPreviewGrid items={previewItems} runID={run.id} />
+        ) : ["running", "not-started", "preparing"].includes(run.status) ? (
+          <div className="flex min-h-[240px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
+            <span className="mr-2 capitalize">{run.status}</span>
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
         ) : (
           <PreBlock value={outputs.data ?? []} />
         )}
