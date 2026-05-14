@@ -38,10 +38,11 @@ func (s *Server) uploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"upload_url":   url,
 		"file_id":      fileID,
 		"download_url": s.storage.PublicURL(key),
+		"include_acl":  true,
 	})
 }
 
@@ -60,7 +61,7 @@ func (s *Server) fileUploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+	writeJSON(w, http.StatusOK, map[string]any{"url": url, "include_acl": true})
 }
 
 func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {

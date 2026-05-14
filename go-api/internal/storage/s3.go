@@ -40,7 +40,7 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, public boo
 	if err != nil {
 		return "", err
 	}
-	return s.replaceCDN(result.URL), nil
+	return result.URL, nil
 }
 
 func (s *S3) PresignGet(ctx context.Context, key string, expires time.Duration) (string, error) {
