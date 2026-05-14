@@ -12,6 +12,9 @@ func (s *Server) staticOr404(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, apiError{Error: "not found"})
 		return
 	}
+	if !s.authorizeStatic(w, r) {
+		return
+	}
 	path := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/"))
 	if path == "." || path == "/" {
 		path = "index.html"
@@ -25,4 +28,16 @@ func (s *Server) staticOr404(w http.ResponseWriter, r *http.Request) {
 		fullPath = filepath.Join(s.cfg.StaticDir, "index.html")
 	}
 	http.ServeFile(w, r, fullPath)
+}
+
+func (s *Server) authorizeStatic(w http.ResponseWriter, r *http.Request) bool {
+	if strings.TrimSpace(s.cfg.LocalAuthPassword) == "" {
+		return true
+	}
+	if _, ok := s.basicAuthUser(r); ok {
+		return true
+	}
+	w.Header().Set("WWW-Authenticate", `Basic realm="ComfyDeploy"`)
+	http.Error(w, "Authorization required", http.StatusUnauthorized)
+	return false
 }

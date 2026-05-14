@@ -35,6 +35,18 @@ func Sign(secret string, user User, ttl time.Duration) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 }
 
+func SignAPIKey(secret string, user User) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID: user.UserID,
+		OrgID:  user.OrgID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(now),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+}
+
 func Parse(secret, tokenValue string) (User, error) {
 	claims := Claims{}
 	token, err := jwt.ParseWithClaims(tokenValue, &claims, func(token *jwt.Token) (any, error) {

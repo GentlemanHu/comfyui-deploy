@@ -33,9 +33,20 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/auth-response/{request_id}", s.getAuthResponse)
 		r.Post("/update-run", s.updateRun)
+		r.Post("/machine-built", s.machineBuilt)
 		r.Get("/file-upload", s.fileUploadURL)
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireBearer)
+			r.Get("/session", s.session)
+			r.Get("/api-keys", s.listAPIKeys)
+			r.Post("/api-keys", s.createAPIKey)
+			r.Delete("/api-keys/{api_key_id}", s.revokeAPIKey)
+			r.Get("/machines", s.listMachines)
+			r.Post("/machines", s.createMachine)
+			r.Get("/machines/{machine_id}", s.getMachine)
+			r.Patch("/machines/{machine_id}", s.updateMachine)
+			r.Delete("/machines/{machine_id}", s.disableMachine)
+			r.Get("/machine/{machine_id}", s.getMachine)
 			r.Get("/upload-url", s.uploadURL)
 			r.Post("/workflow", s.uploadWorkflow)
 			r.Get("/workflows", s.listWorkflows)
@@ -58,6 +69,10 @@ func (s *Server) requireBearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := auth.BearerToken(r)
 		if token == "" {
+			if user, ok := s.basicAuthUser(r); ok {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
+				return
+			}
 			writeJSON(w, http.StatusUnauthorized, apiError{Error: "Invalid or expired token"})
 			return
 		}
@@ -76,6 +91,33 @@ func (s *Server) requireBearer(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
+	})
+}
+
+func (s *Server) basicAuthUser(r *http.Request) (auth.User, bool) {
+	if strings.TrimSpace(s.cfg.LocalAuthPassword) == "" {
+		return auth.User{}, false
+	}
+	username, password, ok := r.BasicAuth()
+	if !ok || password != s.cfg.LocalAuthPassword {
+		return auth.User{}, false
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return auth.User{}, false
+	}
+	if username != s.cfg.LocalAuthUserID && username != s.cfg.LocalAuthUserName {
+		return auth.User{}, false
+	}
+	return auth.User{UserID: s.cfg.LocalAuthUserID, OrgID: s.cfg.LocalAuthOrgID}, true
+}
+
+func (s *Server) session(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user_id": user.UserID,
+		"org_id":  user.OrgID,
+		"name":    s.cfg.LocalAuthUserName,
 	})
 }
 
@@ -99,7 +141,7 @@ func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
