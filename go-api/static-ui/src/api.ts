@@ -33,6 +33,8 @@ export type Machine = {
   disabled: boolean;
   snapshot?: unknown;
   models?: unknown;
+  gpu?: string;
+  build_machine_instance_id?: string;
   build_log?: string;
   created_at: string;
   updated_at: string;

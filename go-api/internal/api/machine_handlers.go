@@ -23,6 +23,8 @@ type machineRecord struct {
 	Disabled  bool            `json:"disabled"`
 	Snapshot  json.RawMessage `json:"snapshot,omitempty"`
 	Models    json.RawMessage `json:"models,omitempty"`
+	GPU       *string         `json:"gpu,omitempty"`
+	BuildID   *string         `json:"build_machine_instance_id,omitempty"`
 	BuildLog  *string         `json:"build_log,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
@@ -36,19 +38,21 @@ type upsertMachineRequest struct {
 	Status    string          `json:"status"`
 	Snapshot  json.RawMessage `json:"snapshot"`
 	Models    json.RawMessage `json:"models"`
+	GPU       string          `json:"gpu"`
 }
 
 type machineBuiltRequest struct {
 	MachineID string `json:"machine_id"`
 	Endpoint  string `json:"endpoint"`
 	BuildLog  string `json:"build_log"`
+	BuildID   string `json:"build_machine_instance_id"`
 }
 
 func (s *Server) listMachines(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	rows, err := s.store.DB.QueryContext(r.Context(), `
 		SELECT id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
+		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), gpu::text, build_machine_instance_id, build_log, created_at, updated_at
 		FROM comfyui_deploy.machines
 		WHERE (($1::text <> '' AND org_id = $1) OR ($1::text = '' AND user_id = $2 AND org_id IS NULL))
 		ORDER BY updated_at DESC
@@ -80,13 +84,13 @@ func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
 	var orgID sql.NullString
 	var authToken sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
-		INSERT INTO comfyui_deploy.machines (id, user_id, org_id, name, endpoint, auth_token, type, status, snapshot, models)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::machine_type, $8::machine_status, $9, $10)
+		INSERT INTO comfyui_deploy.machines (id, user_id, org_id, name, endpoint, auth_token, type, status, snapshot, models, gpu)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::machine_type, $8::machine_status, $9, $10, NULLIF($11, '')::machine_gpu)
 		RETURNING id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
-	`, uuid.NewString(), user.UserID, nullString(user.OrgID), req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models)).Scan(
+		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), gpu::text, build_machine_instance_id, build_log, created_at, updated_at
+	`, uuid.NewString(), user.UserID, nullString(user.OrgID), req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models), req.GPU).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.GPU, &item.BuildID, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
@@ -132,14 +136,15 @@ func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 		    status = COALESCE(NULLIF($8, '')::machine_status, status),
 		    snapshot = COALESCE($9::jsonb, snapshot),
 		    models = COALESCE($10::jsonb, models),
+		    gpu = COALESCE(NULLIF($11, '')::machine_gpu, gpu),
 		    updated_at = now()
 		WHERE id = $1 AND disabled = false
 		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
 		RETURNING id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
-	`, id, user.OrgID, user.UserID, req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models)).Scan(
+		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), gpu::text, build_machine_instance_id, build_log, created_at, updated_at
+	`, id, user.OrgID, user.UserID, req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models), req.GPU).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.GPU, &item.BuildID, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if notFoundOrInternal(w, err, "machine not found") {
 		return
@@ -172,7 +177,7 @@ func (s *Server) disableMachine(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) machineBuilt(w http.ResponseWriter, r *http.Request) {
 	var req machineBuiltRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
@@ -191,9 +196,10 @@ func (s *Server) machineBuilt(w http.ResponseWriter, r *http.Request) {
 		SET status = $2::machine_status,
 		    endpoint = COALESCE(NULLIF($3, ''), endpoint),
 		    build_log = $4,
+		    build_machine_instance_id = COALESCE(NULLIF($5, ''), build_machine_instance_id),
 		    updated_at = now()
 		WHERE id = $1
-	`, req.MachineID, status, req.Endpoint, nullString(req.BuildLog))
+	`, req.MachineID, status, req.Endpoint, nullString(req.BuildLog), req.BuildID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -203,7 +209,7 @@ func (s *Server) machineBuilt(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) readMachineRequest(w http.ResponseWriter, r *http.Request, creating bool) (upsertMachineRequest, bool) {
 	var req upsertMachineRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return req, false
 	}
@@ -235,13 +241,13 @@ func (s *Server) fetchMachine(r *http.Request, id string) (machineRecord, error)
 	var authToken sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
 		SELECT id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
+		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), gpu::text, build_machine_instance_id, build_log, created_at, updated_at
 		FROM comfyui_deploy.machines
 		WHERE id = $1
 		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
 	`, id, user.OrgID, user.UserID).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.GPU, &item.BuildID, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	item.OrgID = ptrNullString(orgID)
 	item.AuthToken = ptrNullString(authToken)
@@ -254,7 +260,7 @@ func scanMachineRecord(row rowScanner) (machineRecord, error) {
 	var authToken sql.NullString
 	err := row.Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.GPU, &item.BuildID, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	item.OrgID = ptrNullString(orgID)
 	item.AuthToken = ptrNullString(authToken)

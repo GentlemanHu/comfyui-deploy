@@ -10,18 +10,19 @@ import (
 )
 
 type runRecord struct {
-	ID                string          `json:"id"`
-	WorkflowID        string          `json:"workflow_id"`
-	WorkflowVersionID *string         `json:"workflow_version_id"`
-	MachineID         *string         `json:"machine_id"`
-	Origin            string          `json:"origin"`
-	Status            string          `json:"status"`
-	WorkflowInputs    json.RawMessage `json:"workflow_inputs"`
-	CreatedAt         time.Time       `json:"created_at"`
-	StartedAt         *time.Time      `json:"started_at"`
-	EndedAt           *time.Time      `json:"ended_at"`
-	MachineName       *string         `json:"machine_name,omitempty"`
-	Version           *int            `json:"version,omitempty"`
+	ID                string            `json:"id"`
+	WorkflowID        string            `json:"workflow_id"`
+	WorkflowVersionID *string           `json:"workflow_version_id"`
+	MachineID         *string           `json:"machine_id"`
+	Origin            string            `json:"origin"`
+	Status            string            `json:"status"`
+	WorkflowInputs    json.RawMessage   `json:"workflow_inputs"`
+	CreatedAt         time.Time         `json:"created_at"`
+	StartedAt         *time.Time        `json:"started_at"`
+	EndedAt           *time.Time        `json:"ended_at"`
+	MachineName       *string           `json:"machine_name,omitempty"`
+	Version           *int              `json:"version,omitempty"`
+	Outputs           []runOutputRecord `json:"outputs,omitempty"`
 }
 
 type runOutputRecord struct {
@@ -70,6 +71,19 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "run_id")
+	s.writeRun(w, r, runID, false)
+}
+
+func (s *Server) getRunQuery(w http.ResponseWriter, r *http.Request) {
+	runID := r.URL.Query().Get("run_id")
+	if runID == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "run_id is required"})
+		return
+	}
+	s.writeRun(w, r, runID, true)
+}
+
+func (s *Server) writeRun(w http.ResponseWriter, r *http.Request, runID string, includeOutputs bool) {
 	row := s.store.DB.QueryRowContext(r.Context(), `
 		SELECT wr.id, wr.workflow_id, wr.workflow_version_id, wr.machine_id, wr.origin::text, wr.status::text,
 		       COALESCE(wr.workflow_inputs, '{}'::jsonb), wr.created_at, wr.started_at, wr.ended_at,
@@ -87,6 +101,14 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, apiError{Error: "run not found"})
 		return
 	}
+	if includeOutputs {
+		outputs, err := s.fetchRunOutputs(r, item.ID, true)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+			return
+		}
+		item.Outputs = outputs
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -100,6 +122,15 @@ func (s *Server) getRunOutputs(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, apiError{Error: "run not found"})
 		return
 	}
+	items, err := s.fetchRunOutputs(r, runID, false)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) fetchRunOutputs(r *http.Request, runID string, withPublicURLs bool) ([]runOutputRecord, error) {
 	rows, err := s.store.DB.QueryContext(r.Context(), `
 		SELECT id, run_id, COALESCE(data, 'null'::jsonb), created_at, updated_at
 		FROM comfyui_deploy.workflow_run_outputs
@@ -107,20 +138,21 @@ func (s *Server) getRunOutputs(w http.ResponseWriter, r *http.Request) {
 		ORDER BY created_at ASC
 	`, runID)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	items := make([]runOutputRecord, 0)
 	for rows.Next() {
 		var item runOutputRecord
 		if err := rows.Scan(&item.ID, &item.RunID, &item.Data, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-			return
+			return nil, err
+		}
+		if withPublicURLs {
+			item.Data = s.addPublicOutputURLs(item.Data, runID)
 		}
 		items = append(items, item)
 	}
-	writeJSON(w, http.StatusOK, items)
+	return items, rows.Err()
 }
 
 func (s *Server) fetchRunForOwner(r *http.Request, runID string) (runRecord, error) {
@@ -162,4 +194,41 @@ func scanRun(row rowScanner) (runRecord, error) {
 		item.Version = &v
 	}
 	return item, err
+}
+
+func (s *Server) addPublicOutputURLs(data json.RawMessage, runID string) json.RawMessage {
+	var root any
+	if err := json.Unmarshal(data, &root); err != nil {
+		return data
+	}
+	object, ok := root.(map[string]any)
+	if !ok {
+		return data
+	}
+	for _, key := range []string{"images", "files", "gifs"} {
+		addPublicURLsToOutputItems(object[key], runID, s.storage.PublicURL)
+	}
+	updated, err := json.Marshal(object)
+	if err != nil {
+		return data
+	}
+	return updated
+}
+
+func addPublicURLsToOutputItems(value any, runID string, publicURL func(string) string) {
+	items, ok := value.([]any)
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		object, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		filename, ok := object["filename"].(string)
+		if !ok || filename == "" {
+			continue
+		}
+		object["url"] = publicURL("outputs/runs/" + runID + "/" + filename)
+	}
 }

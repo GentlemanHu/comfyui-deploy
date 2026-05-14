@@ -17,11 +17,12 @@ type uploadWorkflowRequest struct {
 	Workflow     json.RawMessage `json:"workflow"`
 	WorkflowAPI  json.RawMessage `json:"workflow_api"`
 	Snapshot     json.RawMessage `json:"snapshot"`
+	Comment      string          `json:"comment"`
 }
 
 func (s *Server) uploadWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req uploadWorkflowRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}

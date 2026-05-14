@@ -64,6 +64,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 			r.Get("/workflow-version/{version_id}", s.getWorkflowVersionByID)
 			r.Get("/deployments", s.listAllDeployments)
 			r.Delete("/deployments/{deployment_id}", s.deleteDeployment)
+			r.Get("/run", s.getRunQuery)
 			r.Get("/run/{run_id}", s.getRun)
 			r.Get("/run/{run_id}/outputs", s.getRunOutputs)
 			r.Post("/run", s.createRun)
