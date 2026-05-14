@@ -181,6 +181,11 @@ func readJSON(r *http.Request, target any) error {
 	return decoder.Decode(target)
 }
 
+func readJSONLoose(r *http.Request, target any) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<20))
+	return decoder.Decode(target)
+}
+
 func nullString(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: strings.TrimSpace(value) != ""}
 }

@@ -51,7 +51,7 @@ export function WorkflowDetail({ workflowID }: { workflowID: string }) {
               <select className="h-10 w-[180px] rounded-md border bg-background px-3 text-start" value={activeMachineID} onChange={(e) => setSelectedMachineID(e.target.value)}>
                 {machineOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-              <RunWorkflowButton deploymentID={findDeploymentID(deployments.data ?? [], activeVersion?.id, activeMachineID)} workflowVersion={activeVersion} onCreated={runs.reload} />
+              <RunWorkflowButton workflowVersion={activeVersion} machineID={activeMachineID} onCreated={runs.reload} />
               <CreateDeploymentMenu workflowID={workflowID} versionID={activeVersion?.id} machineID={activeMachineID} onCreated={deployments.reload} />
               <CreateShareButton workflowID={workflowID} versions={versionOptions} machines={machineOptions} onCreated={deployments.reload} presetVersionID={activeVersion?.id} presetMachineID={activeMachineID} />
               <CopyWorkflowVersion workflow={workflowGraph} workflowAPI={activeVersion?.workflow_api} workflowID={workflowID} version={activeVersion?.version} />
@@ -188,15 +188,16 @@ function DeploymentDialog({ workflowID, versions, machines, onCreated, environme
   );
 }
 
-function RunWorkflowButton({ deploymentID, workflowVersion, onCreated }: { deploymentID?: string; workflowVersion?: WorkflowVersion; onCreated: () => Promise<void> }) {
+function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflowVersion?: WorkflowVersion; machineID?: string; onCreated: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const inputs = useMemo(() => getInputsFromWorkflow((workflowVersion?.workflow_api as Record<string, any>) || undefined), [workflowVersion]);
   const [values, setValues] = useState<Record<string, string | number | boolean>>({});
+  const canRun = Boolean(workflowVersion?.id && machineID);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2" disabled={!deploymentID}>Run <Play size={14} /></Button>
+        <Button className="gap-2" disabled={!canRun}>Run <Play size={14} /></Button>
       </DialogTrigger>
       <DialogContent className="max-w-xl">
         <DialogHeader>
@@ -205,11 +206,19 @@ function RunWorkflowButton({ deploymentID, workflowVersion, onCreated }: { deplo
         </DialogHeader>
         <div className="grid gap-4 py-2">
           {inputs.map((item) => <InputField key={item.input_id} item={item} values={values} setValues={setValues} />)}
-          <Button className="gap-2" disabled={!deploymentID || saving} onClick={async () => {
-            if (!deploymentID) return;
+          <Button className="gap-2" disabled={!canRun || saving} onClick={async () => {
+            if (!workflowVersion?.id || !machineID) return;
             setSaving(true);
             try {
-              await api(`/api/run`, { method: "POST", body: JSON.stringify({ deployment_id: deploymentID, inputs: Object.keys(values).length > 0 ? values : undefined }) });
+              await api(`/api/run`, {
+                method: "POST",
+                body: JSON.stringify({
+                  workflow_version_id: workflowVersion.id,
+                  machine_id: machineID,
+                  inputs: Object.keys(values).length > 0 ? values : undefined,
+                  run_origin: "manual",
+                }),
+              });
               await onCreated();
               toast.success("Run created");
               setOpen(false);
@@ -312,10 +321,6 @@ function PreBlock({ value }: { value: unknown }) {
       <pre className="text-xs whitespace-pre-wrap break-all">{JSON.stringify(value, null, 2)}</pre>
     </ScrollArea>
   );
-}
-
-function findDeploymentID(deployments: Deployment[], versionID?: string, machineID?: string) {
-  return deployments.find((item) => item.workflow_version_id === versionID && item.machine_id === machineID && item.environment !== "public-share")?.id;
 }
 
 function DeploymentsTable({ data, onChanged }: { data: Deployment[]; onChanged: () => Promise<void> }) {
@@ -449,7 +454,6 @@ function RunRow({ run }: { run: Run }) {
     const timer = window.setInterval(() => void outputs.reload(), 2000);
     return () => window.clearInterval(timer);
   }, [open, run.status]);
-  const previewItems = (outputs.data ?? []).flatMap((item) => extractMediaItems(item.data));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <TableRow className="cursor-pointer" onClick={() => setOpen(true)}>
@@ -466,8 +470,8 @@ function RunRow({ run }: { run: Run }) {
         </DialogHeader>
         {outputs.loading ? (
           <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
-        ) : previewItems.length > 0 ? (
-          <MediaPreviewGrid items={previewItems} runID={run.id} />
+        ) : (outputs.data ?? []).length > 0 ? (
+          <RunOutputsTable outputs={outputs.data ?? []} runID={run.id} running={["running", "not-started", "preparing"].includes(run.status)} />
         ) : ["running", "not-started", "preparing"].includes(run.status) ? (
           <div className="flex min-h-[240px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
             <span className="mr-2 capitalize">{run.status}</span>
@@ -479,6 +483,55 @@ function RunRow({ run }: { run: Run }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function RunOutputsTable({ outputs, runID, running }: { outputs: RunOutput[]; runID: string; running: boolean }) {
+  return (
+    <ScrollArea className="max-h-[70vh] rounded-md border">
+      <Table className="table-fixed">
+        <TableHeader className="sticky top-0 bg-background">
+          <TableRow>
+            <TableHead className="w-[200px]">File</TableHead>
+            <TableHead>Output</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {outputs.map((output, index) => {
+            const items = extractMediaItems(output.data);
+            const fileName = outputFileName(output.data, index);
+            return (
+              <TableRow key={output.id}>
+                <TableCell className="break-words align-top">{fileName}</TableCell>
+                <TableCell>
+                  {items.length > 0 ? (
+                    <MediaPreviewGrid items={items} runID={runID} compact />
+                  ) : (
+                    <pre className="max-h-[260px] overflow-auto rounded-md bg-muted/40 p-3 text-xs whitespace-pre-wrap break-all">{JSON.stringify(output.data, null, 2)}</pre>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+          {running ? (
+            <TableRow>
+              <TableCell className="text-muted-foreground">Running</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Waiting for more outputs
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : null}
+        </TableBody>
+      </Table>
+    </ScrollArea>
+  );
+}
+
+function outputFileName(data: unknown, index: number) {
+  const items = extractMediaItems(data);
+  return items[0]?.filename || `Output ${index + 1}`;
 }
 
 function statusClassName(status: string) {

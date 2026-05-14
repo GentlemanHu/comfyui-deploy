@@ -15,24 +15,44 @@ import (
 )
 
 type createRunRequest struct {
-	DeploymentID string         `json:"deployment_id"`
-	Inputs       map[string]any `json:"inputs"`
+	DeploymentID      string         `json:"deployment_id"`
+	WorkflowVersionID string         `json:"workflow_version_id"`
+	MachineID         string         `json:"machine_id"`
+	Inputs            map[string]any `json:"inputs"`
+	RunOrigin         string         `json:"run_origin"`
+	Comment           string         `json:"comment"`
 }
 
 func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	var req createRunRequest
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	dep, err := s.fetchDeployment(r, req.DeploymentID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: "Deployment not found"})
-		return
-	}
-	if err := s.authorizeDeployment(r, dep); err != nil {
-		writeJSON(w, http.StatusNotFound, apiError{Error: "Workflow not found"})
-		return
+	var dep deployment
+	var err error
+	origin := normalizeRunOrigin(req.RunOrigin, "api")
+	if strings.TrimSpace(req.DeploymentID) != "" {
+		dep, err = s.fetchDeployment(r, req.DeploymentID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: "Deployment not found"})
+			return
+		}
+		if err := s.authorizeDeployment(r, dep); err != nil {
+			writeJSON(w, http.StatusNotFound, apiError{Error: "Workflow not found"})
+			return
+		}
+	} else {
+		if strings.TrimSpace(req.WorkflowVersionID) == "" || strings.TrimSpace(req.MachineID) == "" {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "workflow_version_id and machine_id are required"})
+			return
+		}
+		dep, err = s.fetchRunTarget(r, req.WorkflowVersionID, req.MachineID)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, apiError{Error: "Workflow version or machine not found"})
+			return
+		}
+		origin = normalizeRunOrigin(req.RunOrigin, "manual")
 	}
 	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, req.Inputs)
 	if dep.Machine.Type == "classic" && !isFullWorkflowGraph(dep.Version.Workflow) {
@@ -44,8 +64,8 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	_, err = s.store.DB.ExecContext(r.Context(), `
 		INSERT INTO comfyui_deploy.workflow_runs
 			(id, workflow_id, workflow_version_id, workflow_inputs, machine_id, origin)
-		VALUES ($1, $2, $3, $4, $5, 'api')
-	`, runID, dep.WorkflowID, dep.WorkflowVersionID, inputsRaw, dep.MachineID)
+		VALUES ($1, $2, $3, $4, $5, $6::workflow_run_origin)
+	`, runID, dep.WorkflowID, dep.WorkflowVersionID, inputsRaw, dep.MachineID, origin)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -64,8 +84,9 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 		RunID      string          `json:"run_id"`
 		Status     string          `json:"status"`
 		OutputData json.RawMessage `json:"output_data"`
+		Comment    string          `json:"comment"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
@@ -78,7 +99,8 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
 		}
-	} else if req.Status != "" {
+	}
+	if req.Status != "" {
 		_, err := s.store.DB.ExecContext(r.Context(), `
 			UPDATE comfyui_deploy.workflow_runs
 			SET status = $1, ended_at = CASE WHEN $1 IN ('success','failed') THEN now() ELSE NULL END
@@ -90,6 +112,15 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "success"})
+}
+
+func normalizeRunOrigin(value string, fallback string) string {
+	switch strings.TrimSpace(value) {
+	case "manual", "api", "public-share":
+		return strings.TrimSpace(value)
+	default:
+		return fallback
+	}
 }
 
 func (s *Server) dispatchRun(r *http.Request, dep deployment, runID string, workflowAPI json.RawMessage) error {

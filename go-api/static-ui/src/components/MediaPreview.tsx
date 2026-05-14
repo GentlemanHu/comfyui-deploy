@@ -1,4 +1,4 @@
-type MediaItem = {
+export type MediaItem = {
   url?: string;
   filename?: string;
   width?: number;
@@ -19,26 +19,26 @@ function isImage(url: string) {
   return [".png", ".jpg", ".jpeg", ".gif", ".webp"].some((ext) => url.endsWith(ext));
 }
 
-export function MediaPreviewGrid({ items, runID, emptyText = "No outputs." }: { items: MediaItem[]; runID?: string; emptyText?: string }) {
+export function MediaPreviewGrid({ items, runID, emptyText = "No outputs.", compact = false }: { items: MediaItem[]; runID?: string; emptyText?: string; compact?: boolean }) {
   if (items.length === 0) {
     return <div className="flex min-h-[240px] items-center justify-center rounded-lg border text-sm text-muted-foreground">{emptyText}</div>;
   }
 
   return (
-    <div className="flex min-h-[240px] flex-wrap items-start justify-center gap-4 rounded-lg border p-4">
+    <div className={`flex flex-wrap items-start justify-center gap-4 rounded-lg border p-4 ${compact ? "min-h-[120px]" : "min-h-[240px]"}`}>
       {items.map((item, index) => {
         const url = mediaUrl(item, runID);
         if (!url) return null;
         if (isVideo(url)) {
           return (
-            <video key={`${url}-${index}`} controls autoPlay className="max-h-[370px] rounded-xl object-contain">
+            <video key={`${url}-${index}`} controls autoPlay className={`${compact ? "max-h-[260px]" : "max-h-[370px]"} rounded-xl object-contain`}>
               <source src={url} type="video/mp4" />
               <source src={url} type="video/webm" />
             </video>
           );
         }
         if (isImage(url)) {
-          return <img key={`${url}-${index}`} className="max-h-[370px] rounded-xl object-contain" src={url} alt={item.filename ?? "Generated output"} />;
+          return <img key={`${url}-${index}`} className={`${compact ? "max-h-[260px]" : "max-h-[370px]"} rounded-xl object-contain`} src={url} alt={item.filename ?? "Generated output"} />;
         }
         return (
           <a

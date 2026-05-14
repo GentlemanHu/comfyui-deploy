@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, navigate } from "./api";
 import { useResource } from "./hooks";
-import { MediaPreviewGrid } from "./components/MediaPreview";
+import { MediaPreviewGrid, extractMediaItems } from "./components/MediaPreview";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { Input } from "./components/ui/input";
@@ -32,10 +32,15 @@ type RunStatus = {
   status: string;
 };
 
+type ShareRunOutput = {
+  id: string;
+  data: unknown;
+};
+
 export function SharePage({ shareID }: { shareID: string }) {
   const shared = useResource<ShareData>(`/api/share/${shareID}`);
   const [runState, setRunState] = useState<RunStatus | null>(null);
-  const [runMedia, setRunMedia] = useState<Array<{ url?: string; filename?: string }>>([]);
+  const [runOutputs, setRunOutputs] = useState<ShareRunOutput[]>([]);
 
   useEffect(() => {
     if (!runState?.run_id || runState.status === "success" || runState.status === "failed") return;
@@ -43,16 +48,8 @@ export function SharePage({ shareID }: { shareID: string }) {
       try {
         const run = await api<{ id: string; status: string }>(`/api/run/${runState.run_id}`);
         setRunState({ run_id: run.id, status: run.status });
-        if (run.status === "success") {
-          const outputs = await api<Array<{ data: any }>>(`/api/run/${runState.run_id}/outputs`);
-          const items = outputs.flatMap((item) => {
-            const images = Array.isArray(item.data?.images) ? item.data.images : [];
-            const gifs = Array.isArray(item.data?.gifs) ? item.data.gifs : [];
-            const files = Array.isArray(item.data?.files) ? item.data.files : [];
-            return [...images, ...gifs, ...files];
-          });
-          setRunMedia(items);
-        }
+        const outputs = await api<ShareRunOutput[]>(`/api/run/${runState.run_id}/outputs`);
+        setRunOutputs(outputs);
       } catch (error) {
         console.error(error);
       }
@@ -109,7 +106,7 @@ export function SharePage({ shareID }: { shareID: string }) {
             deploymentID={item.id}
             inputs={inputs}
             onStarted={(runID) => {
-              setRunMedia([]);
+              setRunOutputs([]);
               setRunState({ run_id: runID, status: "preparing" });
             }}
           />
@@ -121,15 +118,20 @@ export function SharePage({ shareID }: { shareID: string }) {
           <div className="text-sm text-muted-foreground">Run outputs</div>
         </div>
         <div className="p-6 pt-0">
-          {runState && runState.status !== "success" ? (
+          {runOutputs.length > 0 ? (
+            <MediaPreviewGrid
+              items={runOutputs.flatMap((output) => extractMediaItems(output.data))}
+              runID={runState?.run_id}
+              emptyText="No preview outputs."
+            />
+          ) : runState && runState.status !== "success" ? (
             <div className="flex min-h-[240px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
               <span className="mr-2 capitalize">{runState.status}</span>
               <Loader2 className="h-4 w-4 animate-spin" />
             </div>
           ) : (
             <MediaPreviewGrid
-              items={runMedia.length > 0 ? runMedia : item.showcase_media ?? []}
-              runID={runMedia.length > 0 ? runState?.run_id : undefined}
+              items={item.showcase_media ?? []}
               emptyText="No preview outputs."
             />
           )}
@@ -184,7 +186,7 @@ function ShareRunForm({ deploymentID, inputs, onStarted }: { deploymentID: strin
           try {
             const result = await api<{ run_id: string }>(`/api/run`, {
               method: "POST",
-              body: JSON.stringify({ deployment_id: deploymentID, inputs: Object.keys(values).length > 0 ? values : undefined }),
+              body: JSON.stringify({ deployment_id: deploymentID, inputs: Object.keys(values).length > 0 ? values : undefined, run_origin: "public-share" }),
             });
             onStarted(result.run_id);
             toast.success(`Run started: ${result.run_id}`);

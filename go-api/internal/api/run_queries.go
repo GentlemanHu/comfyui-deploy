@@ -35,6 +35,46 @@ func (s *Server) fetchDeployment(r *http.Request, deploymentID string) (deployme
 	return dep, nil
 }
 
+func (s *Server) fetchRunTarget(r *http.Request, workflowVersionID string, machineID string) (deployment, error) {
+	user := currentUser(r)
+	var dep deployment
+	var orgID, machineOrgID, machineAuthToken nullableString
+	var workflow, workflowAPI, snapshot []byte
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		SELECT
+			w.user_id, w.org_id, wv.workflow_id, wv.id,
+			wv.workflow, wv.workflow_api, wv.snapshot, wv.version, wv.created_at, wv.updated_at,
+			m.id, m.user_id, m.org_id, m.name, m.endpoint, m.auth_token, m.type, m.disabled
+		FROM comfyui_deploy.workflow_versions wv
+		JOIN comfyui_deploy.workflows w ON w.id = wv.workflow_id
+		JOIN comfyui_deploy.machines m ON m.id = $2
+		WHERE wv.id = $1
+		  AND m.disabled = false
+		  AND (
+			($3::text <> '' AND w.org_id = $3 AND m.org_id = $3)
+			OR
+			($3::text = '' AND w.org_id IS NULL AND m.org_id IS NULL AND w.user_id = $4 AND m.user_id = $4)
+		  )
+	`, workflowVersionID, machineID, user.OrgID, user.UserID).Scan(
+		&dep.UserID, &orgID, &dep.WorkflowID, &dep.WorkflowVersionID,
+		&workflow, &workflowAPI, &snapshot, &dep.Version.Version, &dep.Version.CreatedAt, &dep.Version.UpdatedAt,
+		&dep.Machine.ID, &dep.Machine.UserID, &machineOrgID, &dep.Machine.Name, &dep.Machine.Endpoint, &machineAuthToken, &dep.Machine.Type, &dep.Machine.Disabled,
+	)
+	if err != nil {
+		return dep, err
+	}
+	dep.OrgID = orgID.ptr()
+	dep.MachineID = dep.Machine.ID
+	dep.Version.WorkflowID = dep.WorkflowID
+	dep.Version.ID = dep.WorkflowVersionID
+	dep.Version.Workflow = scanRawMessage(workflow)
+	dep.Version.WorkflowAPI = scanRawMessage(workflowAPI)
+	dep.Version.Snapshot = scanRawMessage(snapshot)
+	dep.Machine.OrgID = machineOrgID.ptr()
+	dep.Machine.AuthToken = machineAuthToken.ptr()
+	return dep, nil
+}
+
 type nullableString struct {
 	String string
 	Valid  bool
