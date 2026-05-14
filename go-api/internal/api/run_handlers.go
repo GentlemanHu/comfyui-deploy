@@ -75,7 +75,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
-	_, _ = s.store.DB.ExecContext(r.Context(), `UPDATE comfyui_deploy.workflow_runs SET started_at = now() WHERE id = $1`, runID)
+	_, _ = s.store.DB.ExecContext(r.Context(), `UPDATE comfyui_deploy.workflow_runs SET status = 'running', started_at = now() WHERE id = $1`, runID)
 	writeJSON(w, http.StatusOK, map[string]string{"run_id": runID})
 }
 
@@ -99,13 +99,27 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
 		}
+		if req.Status == "" {
+			_, err = s.store.DB.ExecContext(r.Context(), `
+				UPDATE comfyui_deploy.workflow_runs
+				SET status = 'running',
+					started_at = COALESCE(started_at, now())
+				WHERE id = $1 AND status NOT IN ('success','failed')
+			`, req.RunID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+				return
+			}
+		}
 	}
-	if req.Status != "" {
+	if status, ok := normalizeRunStatus(req.Status); ok {
 		_, err := s.store.DB.ExecContext(r.Context(), `
 			UPDATE comfyui_deploy.workflow_runs
-			SET status = $1, ended_at = CASE WHEN $1 IN ('success','failed') THEN now() ELSE NULL END
+			SET status = $1::workflow_run_status,
+				started_at = CASE WHEN $1 IN ('running','uploading','success','failed') THEN COALESCE(started_at, now()) ELSE started_at END,
+				ended_at = CASE WHEN $1 IN ('success','failed') THEN now() ELSE NULL END
 			WHERE id = $2
-		`, req.Status, req.RunID)
+		`, status, req.RunID)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
@@ -120,6 +134,17 @@ func normalizeRunOrigin(value string, fallback string) string {
 		return strings.TrimSpace(value)
 	default:
 		return fallback
+	}
+}
+
+func normalizeRunStatus(value string) (string, bool) {
+	switch strings.TrimSpace(value) {
+	case "not-started", "running", "uploading", "success", "failed":
+		return strings.TrimSpace(value), true
+	case "cancelled", "canceled":
+		return "failed", true
+	default:
+		return "", false
 	}
 }
 

@@ -449,11 +449,12 @@ function RunsTable({ data }: { data: Run[] }) {
 function RunRow({ run }: { run: Run }) {
   const [open, setOpen] = useState(false);
   const outputs = useResource<RunOutput[]>(open ? `/api/run/${run.id}/outputs` : null);
+  const running = ["running", "uploading", "not-started", "preparing"].includes(run.status);
   useEffect(() => {
-    if (!open || !["running", "not-started", "preparing"].includes(run.status)) return;
+    if (!open || !running) return;
     const timer = window.setInterval(() => void outputs.reload(), 2000);
     return () => window.clearInterval(timer);
-  }, [open, run.status]);
+  }, [open, running]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <TableRow className="cursor-pointer" onClick={() => setOpen(true)}>
@@ -471,8 +472,8 @@ function RunRow({ run }: { run: Run }) {
         {outputs.loading ? (
           <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : (outputs.data ?? []).length > 0 ? (
-          <RunOutputsTable outputs={outputs.data ?? []} runID={run.id} running={["running", "not-started", "preparing"].includes(run.status)} />
-        ) : ["running", "not-started", "preparing"].includes(run.status) ? (
+          <RunOutputsTable outputs={outputs.data ?? []} runID={run.id} running={running} />
+        ) : running ? (
           <div className="flex min-h-[240px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
             <span className="mr-2 capitalize">{run.status}</span>
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -536,7 +537,7 @@ function outputFileName(data: unknown, index: number) {
 
 function statusClassName(status: string) {
   if (status === "success") return "inline-flex items-center gap-x-1.5 rounded-md bg-green-500/15 px-2 py-0.5 text-sm font-medium text-green-700";
-  if (status === "running") return "inline-flex items-center gap-x-1.5 rounded-md bg-zinc-600/10 px-2 py-0.5 text-sm font-medium text-zinc-700";
+  if (status === "running" || status === "uploading" || status === "not-started") return "inline-flex items-center gap-x-1.5 rounded-md bg-zinc-600/10 px-2 py-0.5 text-sm font-medium text-zinc-700";
   return "inline-flex items-center gap-x-1.5 rounded-md bg-red-500/15 px-2 py-0.5 text-sm font-medium text-red-700";
 }
 
