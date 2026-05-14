@@ -14,6 +14,7 @@ import {
   Trash2,
   Workflow
 } from "lucide-react";
+import { WorkflowDetail } from "./workflowDetail";
 import "./styles.css";
 
 type Session = { user_id: string; org_id: string; name: string };
@@ -65,7 +66,11 @@ function useResource<T>(path: string) {
 
 function App() {
   const [tab, setTab] = useState<"workflows" | "machines" | "keys">("workflows");
+  const [workflowID, setWorkflowID] = useState("");
   const session = useResource<Session>("/api/session");
+  if (workflowID) {
+    return <WorkflowDetail workflowID={workflowID} onBack={() => setWorkflowID("")} />;
+  }
 
   return (
     <div className="app">
@@ -105,7 +110,7 @@ function App() {
           </div>
         </header>
 
-        {tab === "workflows" && <Workflows />}
+        {tab === "workflows" && <Workflows onOpen={setWorkflowID} />}
         {tab === "machines" && <Machines />}
         {tab === "keys" && <APIKeys />}
       </main>
@@ -113,7 +118,7 @@ function App() {
   );
 }
 
-function Workflows() {
+function Workflows({ onOpen }: { onOpen: (id: string) => void }) {
   const workflows = useResource<WorkflowItem[]>("/api/workflows?limit=100");
   return (
     <section className="panel">
@@ -122,11 +127,11 @@ function Workflows() {
       <div className="table">
         <div className="row head"><span>Name</span><span>ID</span><span>Updated</span></div>
         {(workflows.data ?? []).map((item) => (
-          <div className="row" key={item.id}>
+          <button className="row rowButton" key={item.id} onClick={() => onOpen(item.id)}>
             <span className="strong">{item.name}</span>
             <code>{item.id}</code>
             <span>{formatDate(item.updated_at)}</span>
-          </div>
+          </button>
         ))}
       </div>
       {!workflows.loading && workflows.data?.length === 0 && <Empty text="还没有 workflow。请在 ComfyUI 插件里 Deploy 上传。" />}

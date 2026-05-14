@@ -105,6 +105,14 @@ func (s *Server) getMachine(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
+func (s *Server) getMachineQuery(w http.ResponseWriter, r *http.Request) {
+	item, err := s.fetchMachine(r, r.URL.Query().Get("machine_id"))
+	if notFoundOrInternal(w, err, "machine not found") {
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.readMachineRequest(w, r, false)
 	if !ok {
