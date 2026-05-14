@@ -15,6 +15,7 @@ import {
   Workflow
 } from "lucide-react";
 import { AuthRequest } from "./authRequest";
+import { MachineDetail } from "./machineDetail";
 import { SharePage } from "./sharePage";
 import { WorkflowDetail } from "./workflowDetail";
 import "./styles.css";
@@ -75,11 +76,23 @@ function App() {
   if (shareMatch) {
     return <SharePage shareID={decodeURIComponent(shareMatch[1])} />;
   }
+  const workflowMatch = window.location.pathname.match(/^\/workflows\/([^/]+)$/);
+  if (workflowMatch) {
+    return <WorkflowDetail workflowID={decodeURIComponent(workflowMatch[1])} onBack={() => navigateTo("/")} />;
+  }
+  const machineMatch = window.location.pathname.match(/^\/machines\/([^/]+)$/);
+  if (machineMatch) {
+    return <MachineDetail machineID={decodeURIComponent(machineMatch[1])} onBack={() => navigateTo("/")} />;
+  }
   const [tab, setTab] = useState<"workflows" | "machines" | "keys">("workflows");
   const [workflowID, setWorkflowID] = useState("");
+  const [machineID, setMachineID] = useState("");
   const session = useResource<Session>("/api/session");
   if (workflowID) {
     return <WorkflowDetail workflowID={workflowID} onBack={() => setWorkflowID("")} />;
+  }
+  if (machineID) {
+    return <MachineDetail machineID={machineID} onBack={() => setMachineID("")} />;
   }
 
   return (
@@ -121,7 +134,7 @@ function App() {
         </header>
 
         {tab === "workflows" && <Workflows onOpen={setWorkflowID} />}
-        {tab === "machines" && <Machines />}
+        {tab === "machines" && <Machines onOpen={setMachineID} />}
         {tab === "keys" && <APIKeys />}
       </main>
     </div>
@@ -149,7 +162,7 @@ function Workflows({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function Machines() {
+function Machines({ onOpen }: { onOpen: (id: string) => void }) {
   const machines = useResource<Machine[]>("/api/machines");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -187,11 +200,11 @@ function Machines() {
         <div className="table">
           <div className="row head"><span>Name</span><span>Endpoint</span><span>Status</span><span></span></div>
           {(machines.data ?? []).map((item) => (
-            <div className="row four" key={item.id}>
+            <div className="row four rowButton" key={item.id} onClick={() => onOpen(item.id)}>
               <span className="strong">{item.name}</span>
               <code>{item.endpoint}</code>
               <span className="badge">{item.status}</span>
-              <button className="iconButton danger" onClick={() => removeMachine(item.id, machines.reload)} title="Disable machine">
+              <button className="iconButton danger" onClick={(event) => { event.stopPropagation(); void removeMachine(item.id, machines.reload); }} title="Disable machine">
                 <Trash2 size={16} />
               </button>
             </div>
@@ -305,3 +318,8 @@ function formatDate(value: string) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+function navigateTo(path: string) {
+  window.history.pushState({}, "", path);
+  window.location.reload();
+}
