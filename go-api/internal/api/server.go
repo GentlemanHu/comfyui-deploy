@@ -31,6 +31,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 	r.Use(s.cors)
 	r.Get("/health", s.health)
 	r.Route("/api", func(r chi.Router) {
+		r.Get("/doc", s.apiDoc)
 		r.Get("/auth-response/{request_id}", s.getAuthResponse)
 		r.Post("/update-run", s.updateRun)
 		r.Post("/machine-built", s.machineBuilt)
