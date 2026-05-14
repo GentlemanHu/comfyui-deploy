@@ -49,9 +49,7 @@ services:
       exit 0"
 
   go-api:
-    build:
-      context: ./go-api
-    image: ${COMFYDEPLOY_GO_IMAGE:-comfydeploy-go:local}
+    image: ${COMFYDEPLOY_GO_IMAGE:-ghcr.io/gentlemanhu/comfyui-deploy-go:latest}
     environment:
       GO_API_ADDR: ":3000"
       POSTGRES_URL: ${POSTGRES_URL:-postgres://postgres:postgres@postgres:5432/verceldb?sslmode=disable}
