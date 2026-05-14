@@ -56,3 +56,27 @@ func (s *Server) getAuthResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"api_key": token, "name": name})
 }
+
+func (s *Server) createAuthRequest(w http.ResponseWriter, r *http.Request) {
+	requestID := chi.URLParam(r, "request_id")
+	if requestID == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "request_id is required"})
+		return
+	}
+	user := currentUser(r)
+	_, err := s.store.DB.ExecContext(r.Context(), `
+		INSERT INTO comfyui_deploy.auth_requests (request_id, user_id, org_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (request_id) DO UPDATE
+		SET user_id = EXCLUDED.user_id,
+		    org_id = EXCLUDED.org_id,
+		    api_hash = NULL,
+		    expired_date = NULL,
+		    updated_at = now()
+	`, requestID, user.UserID, nullString(user.OrgID))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Auth request created, you may now return to your application."})
+}

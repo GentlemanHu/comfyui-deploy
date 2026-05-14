@@ -37,6 +37,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 		r.Get("/file-upload", s.fileUploadURL)
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireBearer)
+			r.Post("/auth-request/{request_id}", s.createAuthRequest)
 			r.Get("/session", s.session)
 			r.Get("/api-keys", s.listAPIKeys)
 			r.Post("/api-keys", s.createAPIKey)

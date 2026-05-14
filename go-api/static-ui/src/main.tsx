@@ -14,6 +14,8 @@ import {
   Trash2,
   Workflow
 } from "lucide-react";
+import { AuthRequest } from "./authRequest";
+import { SharePage } from "./sharePage";
 import { WorkflowDetail } from "./workflowDetail";
 import "./styles.css";
 
@@ -65,6 +67,14 @@ function useResource<T>(path: string) {
 }
 
 function App() {
+  const grantMatch = window.location.pathname.match(/^\/auth(?:-request|\/request)\/([^/]+)$/);
+  if (grantMatch) {
+    return <AuthRequest requestID={decodeURIComponent(grantMatch[1])} />;
+  }
+  const shareMatch = window.location.pathname.match(/^\/share\/([^/]+)$/);
+  if (shareMatch) {
+    return <SharePage shareID={decodeURIComponent(shareMatch[1])} />;
+  }
   const [tab, setTab] = useState<"workflows" | "machines" | "keys">("workflows");
   const [workflowID, setWorkflowID] = useState("");
   const session = useResource<Session>("/api/session");
