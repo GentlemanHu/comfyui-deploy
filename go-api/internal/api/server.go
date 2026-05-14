@@ -35,6 +35,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 		r.Post("/update-run", s.updateRun)
 		r.Post("/machine-built", s.machineBuilt)
 		r.Get("/file-upload", s.fileUploadURL)
+		r.Get("/view", s.viewFile)
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireBearer)
 			r.Post("/auth-request/{request_id}", s.createAuthRequest)
@@ -53,6 +54,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 			r.Post("/workflow", s.uploadWorkflow)
 			r.Get("/workflows", s.listWorkflows)
 			r.Get("/workflow/{workflow_id}", s.getWorkflow)
+			r.Delete("/workflow/{workflow_id}", s.deleteWorkflow)
 			r.Get("/workflow/{workflow_id}/deployments", s.listDeployments)
 			r.Post("/workflow/{workflow_id}/deployments", s.createDeployment)
 			r.Get("/workflow/{workflow_id}/runs", s.listRuns)
@@ -66,6 +68,7 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 			r.Post("/run", s.createRun)
 		})
 		r.Get("/share/{share_id}", s.getSharedDeployment)
+		r.Patch("/share/{share_id}/settings", s.updateShareSettings)
 	})
 	r.NotFound(s.staticOr404)
 	return r

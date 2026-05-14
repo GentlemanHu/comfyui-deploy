@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, Boxes, CloudUpload, Loader2, Play, RefreshCcw, Rocket, Server, Workflow } from "lucide-react";
+import { ArrowLeft, Boxes, UploadCloud, Loader2, Play, RefreshCcw, Rocket, Server, Workflow } from "lucide-react";
 
 type WorkflowItem = { id: string; name: string; updated_at: string; versions?: Version[] };
 type Version = { id: string; version: number; created_at: string };
@@ -173,7 +173,7 @@ function DeploymentForm(props: { workflowID: string; versions: Version[]; machin
         <option value="staging">staging</option>
         <option value="public-share">public-share</option>
       </select>
-      <button className="primary compact" disabled={saving}>{saving ? <Loader2 className="spin" size={16} /> : <CloudUpload size={16} />} Deploy</button>
+      <button className="primary compact" disabled={saving}>{saving ? <Loader2 className="spin" size={16} /> : <UploadCloud size={16} />} Deploy</button>
     </form>
   );
 }

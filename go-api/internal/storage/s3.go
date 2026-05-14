@@ -43,6 +43,17 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, public boo
 	return s.replaceCDN(result.URL), nil
 }
 
+func (s *S3) PresignGet(ctx context.Context, key string, expires time.Duration) (string, error) {
+	result, err := s.client.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.cfg.SpacesBucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(expires))
+	if err != nil {
+		return "", err
+	}
+	return s.replaceCDN(result.URL), nil
+}
+
 func (s *S3) PublicURL(key string) string {
 	base := strings.TrimRight(s.cfg.SpacesEndpointCDN, "/")
 	if s.cfg.SpacesCDNNoBucket {

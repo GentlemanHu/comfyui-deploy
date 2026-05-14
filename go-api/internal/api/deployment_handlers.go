@@ -191,6 +191,31 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deployment": item, "workflow_name": workflowName})
 }
 
+func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Description   string          `json:"description"`
+		ShowcaseMedia json.RawMessage `json:"showcase_media"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	shareID := chi.URLParam(r, "share_id")
+	_, err := s.store.DB.ExecContext(r.Context(), `
+		UPDATE comfyui_deploy.deployments
+		SET description = $2,
+		    showcase_media = $3,
+		    updated_at = now()
+		WHERE environment = 'public-share'
+		  AND (id::text = $1 OR share_slug = $1)
+	`, shareID, nullString(req.Description), jsonOrNull(req.ShowcaseMedia))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Info Updated"})
+}
+
 func (s *Server) fetchDeployments(r *http.Request, where string, args ...any) ([]deploymentRecord, error) {
 	rows, err := s.store.DB.QueryContext(r.Context(), `
 		SELECT d.id, d.user_id, d.org_id, d.workflow_id, d.workflow_version_id, d.machine_id, d.environment::text,

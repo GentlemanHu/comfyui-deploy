@@ -105,6 +105,11 @@ func (s *Server) listWorkflows(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
 		}
+		versions, _ := s.fetchVersions(r, item["id"].(string), 1, 0)
+		deployments, _ := s.fetchDeployments(r, "d.workflow_id = $1 AND d.environment = 'public-share'", item["id"])
+		item["versions"] = versions
+		item["deployments"] = deployments
+		item["user"] = map[string]string{"name": s.cfg.LocalAuthUserName}
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -132,6 +137,20 @@ func (s *Server) getWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	item["versions"] = versions
 	writeJSON(w, http.StatusOK, item)
+}
+
+func (s *Server) deleteWorkflow(w http.ResponseWriter, r *http.Request) {
+	workflowID := chi.URLParam(r, "workflow_id")
+	if err := s.ensureWorkflowOwner(r, workflowID); err != nil {
+		writeJSON(w, http.StatusNotFound, apiError{Error: "No workflow found"})
+		return
+	}
+	_, err := s.store.DB.ExecContext(r.Context(), `DELETE FROM comfyui_deploy.workflows WHERE id = $1`, workflowID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 func (s *Server) listWorkflowVersions(w http.ResponseWriter, r *http.Request) {

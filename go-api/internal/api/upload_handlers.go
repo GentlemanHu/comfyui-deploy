@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -59,4 +61,18 @@ func (s *Server) fileUploadURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
+	file := strings.TrimPrefix(strings.TrimSpace(r.URL.Query().Get("file")), "/")
+	if file == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "file is required"})
+		return
+	}
+	u, err := s.storage.PresignGet(r.Context(), file, 15*time.Minute)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
