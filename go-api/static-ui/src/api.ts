@@ -95,6 +95,49 @@ export type RunOutput = {
   updated_at: string;
 };
 
+export type WorkflowStats = {
+  overview: {
+    total_runs: number;
+    success_runs: number;
+    failed_runs: number;
+    active_runs: number;
+    total_outputs: number;
+    success_rate: number;
+    avg_queue_seconds?: number;
+    avg_run_seconds?: number;
+    latest_run_at?: string;
+  };
+  status: WorkflowStatsBucket[];
+  origins: WorkflowStatsBucket[];
+  machines: WorkflowStatsBucket[];
+  versions: WorkflowStatsBucket[];
+  daily: { date: string; total: number; success: number; failed: number; active: number }[];
+  deployments: {
+    id: string;
+    environment: string;
+    version?: number;
+    machine_name?: string;
+    updated_at: string;
+    runs: number;
+    success_runs: number;
+    success_rate: number;
+    last_run_at?: string;
+  }[];
+  generated_at: string;
+};
+
+export type GlobalStats = WorkflowStats & {
+  workflows: WorkflowStatsBucket[];
+};
+
+export type WorkflowStatsBucket = {
+  key: string;
+  label: string;
+  count: number;
+  percentage: number;
+  avg_seconds?: number;
+};
+
 export type Session = { user_id: string; org_id: string; name: string };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

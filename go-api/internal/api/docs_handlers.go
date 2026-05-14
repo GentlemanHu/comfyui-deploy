@@ -54,6 +54,10 @@ func (s *Server) apiDoc(w http.ResponseWriter, r *http.Request) {
 					map[string]any{"limit": 20, "offset": 0, "search": "optional"},
 					[]any{map[string]any{"id": "uuid", "name": "Workflow", "versions": []any{}, "deployments": []any{}}}),
 			},
+			"/stats": map[string]any{
+				"get": endpointDoc("Get global request statistics grouped by workflow, machine, origin, version, status, deployment, and date.", true, nil,
+					map[string]any{"overview": map[string]any{"total_runs": 42, "success_rate": 95.2}, "workflows": []any{}, "machines": []any{}, "daily": []any{}}),
+			},
 			"/workflow/{workflow_id}": map[string]any{
 				"get":    endpointDoc("Get workflow detail.", true, nil, map[string]any{"id": "uuid", "versions": []any{}}),
 				"delete": endpointDoc("Delete workflow.", true, nil, map[string]any{"deleted": true}),
@@ -72,6 +76,13 @@ func (s *Server) apiDoc(w http.ResponseWriter, r *http.Request) {
 				"post": endpointDoc("Create or update a deployment for an environment.", true,
 					map[string]any{"version_id": "uuid", "machine_id": "uuid", "environment": "production|staging|public-share"},
 					map[string]any{"id": "uuid", "environment": "production"}),
+			},
+			"/workflow/{workflow_id}/runs": map[string]any{
+				"get": endpointDoc("List workflow runs.", true, map[string]any{"limit": 80, "offset": 0}, []any{map[string]any{"id": "uuid", "status": "success"}}),
+			},
+			"/workflow/{workflow_id}/stats": map[string]any{
+				"get": endpointDoc("Get statistics for one workflow grouped by machine, origin, version, status, deployment, and date.", true, nil,
+					map[string]any{"overview": map[string]any{"total_runs": 12, "total_outputs": 16}, "machines": []any{}, "versions": []any{}, "daily": []any{}}),
 			},
 			"/deployments": map[string]any{
 				"get": endpointDoc("List all deployments.", true, nil, []any{map[string]any{"id": "uuid"}}),

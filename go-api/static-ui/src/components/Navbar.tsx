@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 const pages = [
   { name: "Workflows", path: "/workflows" },
   { name: "Machines", path: "/machines" },
+  { name: "Stats", path: "/stats" },
   { name: "API Keys", path: "/api-keys" },
   { name: "Examples", path: "/examples" },
 ];

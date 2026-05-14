@@ -22,6 +22,7 @@ import { DocsPage } from "./docsPage";
 import { MachineDetail } from "./machineDetail";
 import { SharePage } from "./sharePage";
 import { ShareSettings } from "./shareSettings";
+import { StatsPage } from "./statsPage";
 import { WorkflowDetail } from "./workflowDetail";
 import { getRelativeTime } from "./lib/getRelativeTime";
 import { Button } from "./components/ui/button";
@@ -64,6 +65,7 @@ function App() {
   if (workflowMatch) return <Shell><WorkflowDetail workflowID={decodeURIComponent(workflowMatch[1])} /></Shell>;
   if (machineMatch) return <Shell><MachineDetail machineID={decodeURIComponent(machineMatch[1])} /></Shell>;
   if (["/examples", "/docs", "/docs/install", "/docs/endpoints"].includes(path)) return <Shell><DocsPage path={path === "/docs" ? "/docs/install" : path} /></Shell>;
+  if (path === "/stats") return <Shell><StatsPage /></Shell>;
   if (path === "/machines") return <Shell><MachinesPage /></Shell>;
   if (path === "/api-keys") return <Shell><APIKeysPage /></Shell>;
   if (path === "/") return <Shell><HomePage /></Shell>;
