@@ -33,16 +33,15 @@ export function AuthRequest({ requestID }: { requestID: string }) {
   };
 
   return (
-    <div className="grantPage">
-      <div className="grantPanel">
+    <div className="h-full w-full flex flex-col gap-2 items-center justify-center">
+      <div className="flex flex-col items-center gap-4 rounded-xl border bg-card p-8 shadow-sm min-w-[320px]">
         <div className="brandMark"><KeyRound size={22} /></div>
-        <h1>Grant API Access</h1>
-        <p>Authorize this ComfyUI plugin session to receive a temporary ComfyDeploy API key.</p>
-        <code>{requestID}</code>
-        {error && <div className="error">{error}</div>}
-        {message && <div className="successBox">{message}</div>}
-        <button className="primary" onClick={grant} disabled={loading || !requestID}>
-          {loading ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />} Grant Access
+        <div className="text-lg">Grant API Access to Local Admin</div>
+        <code className="text-xs text-muted-foreground">{requestID || "No valid request_id"}</code>
+        {error && <div className="error w-full">{error}</div>}
+        {message && <div className="successBox w-full">{message}</div>}
+        <button className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-primary-foreground" onClick={grant} disabled={loading || !requestID}>
+          {loading ? <Loader2 className="spin mr-2" size={16} /> : <KeyRound className="mr-2" size={16} />} Grant Access
         </button>
       </div>
     </div>

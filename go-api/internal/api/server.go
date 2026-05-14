@@ -67,9 +67,12 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 			r.Get("/run/{run_id}/outputs", s.getRunOutputs)
 			r.Post("/run", s.createRun)
 		})
-		r.Get("/share/{share_id}", s.getSharedDeployment)
-		r.Patch("/share/{share_id}/settings", s.updateShareSettings)
-	})
+			r.Get("/share/{share_id}", s.getSharedDeployment)
+			r.Post("/share/{share_id}/clone-workflow", s.cloneSharedWorkflow)
+			r.Post("/share/{share_id}/clone-machine", s.cloneSharedMachine)
+			r.Patch("/share/{share_id}/settings", s.updateShareSettings)
+			r.Delete("/share/{share_id}/settings", s.deleteShareSettings)
+		})
 	r.NotFound(s.staticOr404)
 	return r
 }

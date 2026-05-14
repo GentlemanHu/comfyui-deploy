@@ -18,6 +18,7 @@ type deploymentRecord struct {
 	OrgID             *string         `json:"org_id"`
 	WorkflowID        string          `json:"workflow_id"`
 	WorkflowVersionID string          `json:"workflow_version_id"`
+	WorkflowAPI       json.RawMessage `json:"workflow_api,omitempty"`
 	MachineID         string          `json:"machine_id"`
 	Environment       string          `json:"environment"`
 	ShareSlug         *string         `json:"share_slug"`
@@ -166,21 +167,24 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 	shareID := chi.URLParam(r, "share_id")
 	var item deploymentRecord
 	var workflowName string
+	var ownerName sql.NullString
 	var orgID sql.NullString
 	var shareSlug sql.NullString
 	var description sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
 		SELECT d.id, d.user_id, d.org_id, d.workflow_id, d.workflow_version_id, d.machine_id, d.environment::text,
 		       d.share_slug, d.description, COALESCE(d.showcase_media, 'null'::jsonb), d.created_at, d.updated_at,
-		       w.name
+		       w.name, COALESCE(v.workflow_api, '{}'::jsonb), u.name
 		FROM comfyui_deploy.deployments d
 		JOIN comfyui_deploy.workflows w ON w.id = d.workflow_id
+		JOIN comfyui_deploy.workflow_versions v ON v.id = d.workflow_version_id
+		LEFT JOIN comfyui_deploy.users u ON u.id = w.user_id
 		WHERE d.environment = 'public-share'
 		  AND (d.id::text = $1 OR d.share_slug = $1)
 		LIMIT 1
 	`, shareID).Scan(
 		&item.ID, &item.UserID, &orgID, &item.WorkflowID, &item.WorkflowVersionID, &item.MachineID, &item.Environment,
-		&shareSlug, &description, &item.ShowcaseMedia, &item.CreatedAt, &item.UpdatedAt, &workflowName,
+		&shareSlug, &description, &item.ShowcaseMedia, &item.CreatedAt, &item.UpdatedAt, &workflowName, &item.WorkflowAPI, &ownerName,
 	)
 	if notFoundOrInternal(w, err, "share not found") {
 		return
@@ -188,7 +192,11 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 	item.OrgID = ptrNullString(orgID)
 	item.ShareSlug = ptrNullString(shareSlug)
 	item.Description = ptrNullString(description)
-	writeJSON(w, http.StatusOK, map[string]any{"deployment": item, "workflow_name": workflowName})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deployment":    item,
+		"workflow_name": workflowName,
+		"owner_name":    strings.TrimSpace(ownerName.String),
+	})
 }
 
 func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +222,109 @@ func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Info Updated"})
+}
+
+func (s *Server) deleteShareSettings(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	shareID := chi.URLParam(r, "share_id")
+	res, err := s.store.DB.ExecContext(r.Context(), `
+		DELETE FROM comfyui_deploy.deployments
+		WHERE environment = 'public-share'
+		  AND (id::text = $1 OR share_slug = $1)
+		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
+	`, shareID, user.OrgID, user.UserID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		writeJSON(w, http.StatusNotFound, apiError{Error: "share not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (s *Server) cloneSharedWorkflow(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	shareID := chi.URLParam(r, "share_id")
+	var workflowID string
+	var workflowName string
+	var workflowRaw json.RawMessage
+	var workflowAPIRaw json.RawMessage
+	var snapshotRaw json.RawMessage
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		SELECT w.name,
+		       v.workflow,
+		       v.workflow_api,
+		       COALESCE(v.snapshot, 'null'::jsonb)
+		FROM comfyui_deploy.deployments d
+		JOIN comfyui_deploy.workflows w ON w.id = d.workflow_id
+		JOIN comfyui_deploy.workflow_versions v ON v.id = d.workflow_version_id
+		WHERE d.environment = 'public-share'
+		  AND (d.id::text = $1 OR d.share_slug = $1)
+		LIMIT 1
+	`, shareID).Scan(&workflowName, &workflowRaw, &workflowAPIRaw, &snapshotRaw)
+	if notFoundOrInternal(w, err, "share not found") {
+		return
+	}
+
+	workflowID = uuid.NewString()
+	_, err = s.store.DB.ExecContext(r.Context(), `
+		INSERT INTO comfyui_deploy.workflows (id, user_id, org_id, name)
+		VALUES ($1, $2, $3, $4)
+	`, workflowID, user.UserID, nullString(user.OrgID), workflowName+" (Cloned)")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	_, err = s.store.DB.ExecContext(r.Context(), `
+		INSERT INTO comfyui_deploy.workflow_versions (id, workflow_id, workflow, workflow_api, snapshot, version)
+		VALUES ($1, $2, $3, $4, $5, 1)
+	`, uuid.NewString(), workflowID, workflowRaw, workflowAPIRaw, snapshotRaw)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workflow_id": workflowID, "message": "Successfully cloned workflow"})
+}
+
+func (s *Server) cloneSharedMachine(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	shareID := chi.URLParam(r, "share_id")
+	var item machineRecord
+	var orgID sql.NullString
+	var authToken sql.NullString
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		INSERT INTO comfyui_deploy.machines (
+			id, user_id, org_id, name, endpoint, auth_token, type, status, snapshot, models
+		)
+		SELECT $2,
+		       $3,
+		       $4,
+		       m.name || ' (Cloned)',
+		       m.endpoint,
+		       m.auth_token,
+		       m.type,
+		       m.status,
+		       COALESCE(m.snapshot, 'null'::jsonb),
+		       COALESCE(m.models, 'null'::jsonb)
+		FROM comfyui_deploy.deployments d
+		JOIN comfyui_deploy.machines m ON m.id = d.machine_id
+		WHERE d.environment = 'public-share'
+		  AND (d.id::text = $1 OR d.share_slug = $1)
+		RETURNING id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
+		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), created_at, updated_at
+	`, shareID, uuid.NewString(), user.UserID, nullString(user.OrgID)).Scan(
+		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
+		&item.Snapshot, &item.Models, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if notFoundOrInternal(w, err, "share not found") {
+		return
+	}
+	item.OrgID = ptrNullString(orgID)
+	item.AuthToken = ptrNullString(authToken)
+	writeJSON(w, http.StatusOK, map[string]any{"machine_id": item.ID, "message": "Successfully cloned machine"})
 }
 
 func (s *Server) fetchDeployments(r *http.Request, where string, args ...any) ([]deploymentRecord, error) {

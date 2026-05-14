@@ -16,6 +16,7 @@ type apiKeyRecord struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Key       string    `json:"key,omitempty"`
+	MaskedKey string    `json:"masked_key,omitempty"`
 	Revoked   bool      `json:"revoked"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -28,7 +29,7 @@ type createAPIKeyRequest struct {
 func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	rows, err := s.store.DB.QueryContext(r.Context(), `
-		SELECT id, name, revoked, created_at, updated_at
+		SELECT id, name, key, revoked, created_at, updated_at
 		FROM comfyui_deploy.api_keys
 		WHERE (($1::text <> '' AND org_id = $1) OR ($1::text = '' AND user_id = $2 AND org_id IS NULL))
 		ORDER BY created_at DESC
@@ -42,10 +43,12 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	items := make([]apiKeyRecord, 0)
 	for rows.Next() {
 		var item apiKeyRecord
-		if err := rows.Scan(&item.ID, &item.Name, &item.Revoked, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Key, &item.Revoked, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
 		}
+		item.MaskedKey = maskAPIKey(item.Key)
+		item.Key = ""
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -80,6 +83,7 @@ func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item.Key = token
+	item.MaskedKey = maskAPIKey(token)
 	writeJSON(w, http.StatusCreated, item)
 }
 
@@ -114,4 +118,15 @@ func notFoundOrInternal(w http.ResponseWriter, err error, message string) bool {
 	}
 	writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 	return true
+}
+
+func maskAPIKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 4 {
+		return "****"
+	}
+	return "****" + value[len(value)-4:]
 }

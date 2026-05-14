@@ -1,61 +1,66 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Loader2, Server } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { useResource } from "./hooks";
+import { type Machine } from "./api";
+import { getRelativeTime } from "./lib/getRelativeTime";
+import { ScrollArea } from "./components/ui/scroll-area";
 
-type Machine = {
-  id: string;
-  name: string;
-  endpoint: string;
-  type: string;
-  status: string;
-  disabled: boolean;
-  snapshot?: unknown;
-  models?: unknown;
-  updated_at: string;
-};
+export function MachineDetail({ machineID }: { machineID: string }) {
+  const machine = useResource<Machine>(`/api/machines/${machineID}`);
 
-async function api<T>(path: string): Promise<T> {
-  const res = await fetch(path, { credentials: "include" });
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as T;
-}
+  if (machine.loading) {
+    return <div className="h-full w-full flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+  }
 
-export function MachineDetail({ machineID, onBack }: { machineID: string; onBack: () => void }) {
-  const [machine, setMachine] = useState<Machine | null>(null);
-  const [error, setError] = useState("");
+  if (machine.error || !machine.data) {
+    return <div className="h-full w-full flex items-center justify-center text-sm text-destructive">{machine.error || "Machine not found."}</div>;
+  }
 
-  useEffect(() => {
-    api<Machine>(`/api/machines/${machineID}`).then(setMachine).catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [machineID]);
+  const item = machine.data;
 
   return (
-    <div className="detailApp">
-      <header className="detailTopbar">
-        <button className="iconButton" onClick={onBack} title="Back"><ArrowLeft size={17} /></button>
-        <div>
-          <h1>{machine?.name ?? "Machine"}</h1>
-          <p>{machineID}</p>
+    <div>
+      <div className="w-full h-fit mt-4 rounded-xl border bg-card text-card-foreground shadow-sm">
+        <div className="flex flex-col space-y-1.5 p-6">
+          <div className="text-2xl font-semibold leading-none tracking-tight">{item.name}</div>
+          <div className="text-sm text-muted-foreground">{getRelativeTime(item.updated_at)}</div>
         </div>
-      </header>
-      {error && <div className="error">{error}</div>}
-      {!machine && !error && <div className="grantPage"><Loader2 className="spin" size={24} /></div>}
-      {machine && (
-        <section className="panel">
-          <div className="panelTitle"><h2><Server size={18} />Machine Detail</h2></div>
-          <div className="table">
-            <div className="row"><span className="strong">Endpoint</span><code>{machine.endpoint}</code><span>{machine.status}</span></div>
-            <div className="row"><span className="strong">Type</span><span>{machine.type}</span><span>{machine.disabled ? "disabled" : "enabled"}</span></div>
-            <div className="row"><span className="strong">Updated</span><span>{formatDate(machine.updated_at)}</span><span></span></div>
+        <div className="p-6 pt-0 space-y-4">
+          <div className="rounded-md border p-4 grid gap-3 text-sm">
+            <div className="grid grid-cols-[120px,1fr] gap-3">
+              <span className="font-medium">Endpoint</span>
+              <code className="break-all text-xs">{item.endpoint}</code>
+            </div>
+            <div className="grid grid-cols-[120px,1fr] gap-3">
+              <span className="font-medium">Type</span>
+              <span>{item.type}</span>
+            </div>
+            <div className="grid grid-cols-[120px,1fr] gap-3">
+              <span className="font-medium">Status</span>
+              <span>{item.disabled ? "disabled" : item.status}</span>
+            </div>
           </div>
-          <div className="outputBox">
-            <pre>{JSON.stringify({ models: machine.models, snapshot: machine.snapshot }, null, 2)}</pre>
-          </div>
-        </section>
-      )}
+
+          {item.status === "building" || item.build_log ? (
+            <div className="rounded-md border p-4">
+              <div className="mb-2 font-medium">Build Log</div>
+              <ScrollArea className="max-h-[420px]">
+                <pre className="text-xs whitespace-pre-wrap break-all">{formatBuildLog(item.build_log, item.status)}</pre>
+              </ScrollArea>
+            </div>
+          ) : (
+            <div className="rounded-md border p-4">
+              <div className="mb-2 font-medium">Machine Detail</div>
+              <pre className="text-xs whitespace-pre-wrap break-all max-h-[420px] overflow-auto">{JSON.stringify({ models: item.models, snapshot: item.snapshot }, null, 2)}</pre>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function formatDate(value: string) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function formatBuildLog(buildLog: string | undefined, status: string) {
+  if (buildLog && buildLog.trim()) return buildLog;
+  if (status === "building") return "Machine build is still running...";
+  return "No build log available.";
 }

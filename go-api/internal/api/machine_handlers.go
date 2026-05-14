@@ -23,6 +23,7 @@ type machineRecord struct {
 	Disabled  bool            `json:"disabled"`
 	Snapshot  json.RawMessage `json:"snapshot,omitempty"`
 	Models    json.RawMessage `json:"models,omitempty"`
+	BuildLog  *string         `json:"build_log,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 }
@@ -47,10 +48,9 @@ func (s *Server) listMachines(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	rows, err := s.store.DB.QueryContext(r.Context(), `
 		SELECT id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), created_at, updated_at
+		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
 		FROM comfyui_deploy.machines
-		WHERE disabled = false
-		  AND (($1::text <> '' AND org_id = $1) OR ($1::text = '' AND user_id = $2 AND org_id IS NULL))
+		WHERE (($1::text <> '' AND org_id = $1) OR ($1::text = '' AND user_id = $2 AND org_id IS NULL))
 		ORDER BY updated_at DESC
 	`, user.OrgID, user.UserID)
 	if err != nil {
@@ -83,10 +83,10 @@ func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO comfyui_deploy.machines (id, user_id, org_id, name, endpoint, auth_token, type, status, snapshot, models)
 		VALUES ($1, $2, $3, $4, $5, $6, $7::machine_type, $8::machine_status, $9, $10)
 		RETURNING id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), created_at, updated_at
+		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
 	`, uuid.NewString(), user.UserID, nullString(user.OrgID), req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models)).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
@@ -136,10 +136,10 @@ func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 		WHERE id = $1 AND disabled = false
 		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
 		RETURNING id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), created_at, updated_at
+		          COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
 	`, id, user.OrgID, user.UserID, req.Name, req.Endpoint, req.AuthToken, req.Type, req.Status, jsonOrNull(req.Snapshot), jsonOrNull(req.Models)).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	if notFoundOrInternal(w, err, "machine not found") {
 		return
@@ -235,13 +235,13 @@ func (s *Server) fetchMachine(r *http.Request, id string) (machineRecord, error)
 	var authToken sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
 		SELECT id, user_id, org_id, name, endpoint, auth_token, type::text, status::text, disabled,
-		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), created_at, updated_at
+		       COALESCE(snapshot, 'null'::jsonb), COALESCE(models, 'null'::jsonb), build_log, created_at, updated_at
 		FROM comfyui_deploy.machines
-		WHERE id = $1 AND disabled = false
+		WHERE id = $1
 		  AND (($2::text <> '' AND org_id = $2) OR ($2::text = '' AND user_id = $3 AND org_id IS NULL))
 	`, id, user.OrgID, user.UserID).Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	item.OrgID = ptrNullString(orgID)
 	item.AuthToken = ptrNullString(authToken)
@@ -254,7 +254,7 @@ func scanMachineRecord(row rowScanner) (machineRecord, error) {
 	var authToken sql.NullString
 	err := row.Scan(
 		&item.ID, &item.UserID, &orgID, &item.Name, &item.Endpoint, &authToken, &item.Type, &item.Status, &item.Disabled,
-		&item.Snapshot, &item.Models, &item.CreatedAt, &item.UpdatedAt,
+		&item.Snapshot, &item.Models, &item.BuildLog, &item.CreatedAt, &item.UpdatedAt,
 	)
 	item.OrgID = ptrNullString(orgID)
 	item.AuthToken = ptrNullString(authToken)

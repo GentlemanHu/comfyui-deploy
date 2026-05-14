@@ -1,5 +1,5 @@
 import { Github, Menu, UserCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import { useMediaQuery } from "usehooks-ts";
 import { navigate } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -58,7 +58,7 @@ export function Navbar() {
       <div className="flex flex-row items-center gap-2">
         {isDesktop && <NavbarMenu />}
         <Button asChild variant="link" className="rounded-full aspect-square p-2 mr-4">
-          <a href="/docs/install" onClick={(event) => route(event, "/docs/install")}>Docs</a>
+          <a href="/docs" onClick={(event) => route(event, "/docs")}>Docs</a>
         </Button>
         <Button variant="ghost" className="gap-2">
           <UserCircle size={18} />
@@ -116,7 +116,7 @@ export function NavbarMenu({ className, closeSheet }: { className?: string; clos
   );
 }
 
-function route(event: React.MouseEvent<HTMLAnchorElement>, path: string) {
+function route(event: MouseEvent<HTMLAnchorElement>, path: string) {
   event.preventDefault();
   navigate(path);
 }

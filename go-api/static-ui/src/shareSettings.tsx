@@ -1,44 +1,74 @@
+import { ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api } from "./api";
+import { api, navigate } from "./api";
 import { Button } from "./components/ui/button";
-import { Textarea } from "./components/ui/textarea";
 import { Input } from "./components/ui/input";
+import { Textarea } from "./components/ui/textarea";
 
 export function ShareSettings({ shareID }: { shareID: string }) {
   const [description, setDescription] = useState("");
   const [media, setMedia] = useState("");
   const [deploymentID, setDeploymentID] = useState(shareID);
+  const [shareSlug, setShareSlug] = useState(shareID);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     api<any>(`/api/share/${shareID}`).then((data) => {
       setDeploymentID(data.deployment.id);
+      setShareSlug(data.deployment.share_slug ?? data.deployment.id);
       setDescription(data.deployment.description ?? "");
-      setMedia(JSON.stringify(data.deployment.showcase_media ?? null, null, 2));
-    }).catch((err) => toast.error(String(err)));
+      setMedia(JSON.stringify(data.deployment.showcase_media ?? [], null, 2));
+    }).catch((err) => toast.error(String(err))).finally(() => setLoading(false));
   }, [shareID]);
 
   return (
-    <div className="max-w-3xl py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Share Page Settings</h1>
-        <p className="text-sm text-muted-foreground">Update public share metadata.</p>
-      </div>
-      <div className="grid gap-4 rounded-md border bg-background p-4">
-        <Input value={deploymentID} disabled />
-        <Textarea className="min-h-32" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" />
-        <Textarea className="min-h-40 font-mono text-xs" value={media} onChange={(e) => setMedia(e.target.value)} placeholder="Showcase media JSON" />
-        <Button className="w-fit" onClick={async () => {
-          let showcase_media = null;
-          try {
-            showcase_media = media.trim() ? JSON.parse(media) : null;
-          } catch {
-            toast.error("Invalid showcase media JSON");
-            return;
-          }
-          await api(`/api/share/${deploymentID}/settings`, { method: "PATCH", body: JSON.stringify({ description, showcase_media }) });
-          toast.success("Info Updated");
-        }}>Save</Button>
+    <div className="flex h-full items-center justify-center py-8">
+      <div className="w-full max-w-[600px] rounded-xl border bg-background shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b p-6">
+          <div>
+            <h1 className="text-2xl font-semibold">Share Page</h1>
+            <p className="text-sm text-muted-foreground">Edit share page details.</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => window.history.back()}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="grid gap-4 p-6">
+          <Input value={deploymentID} disabled />
+          <Textarea className="min-h-32" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" disabled={loading} />
+          <Textarea className="min-h-40 font-mono text-xs" value={media} onChange={(e) => setMedia(e.target.value)} placeholder="Showcase media JSON" disabled={loading} />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" type="button" onClick={async () => {
+              await api(`/api/share/${deploymentID}/settings`, { method: "DELETE" });
+              toast.success("Share removed");
+              navigate("/workflows");
+            }}>
+              Remove
+            </Button>
+            <Button variant="outline" type="button" onClick={() => window.open(`/share/${shareSlug}`, "_blank", "noopener,noreferrer")}>
+              View Share Page <ExternalLink className="ml-2 h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                let showcase_media = null;
+                try {
+                  showcase_media = media.trim() ? JSON.parse(media) : [];
+                } catch {
+                  toast.error("Invalid showcase media JSON");
+                  return;
+                }
+                await api(`/api/share/${deploymentID}/settings`, { method: "PATCH", body: JSON.stringify({ description, showcase_media }) });
+                toast.success("Info Updated");
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

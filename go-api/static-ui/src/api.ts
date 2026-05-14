@@ -42,6 +42,7 @@ export type APIKey = {
   id: string;
   name: string;
   key?: string;
+  masked_key?: string;
   revoked: boolean;
   created_at: string;
   updated_at: string;
@@ -64,6 +65,9 @@ export type Deployment = {
   updated_at: string;
   machine_name?: string;
   version?: number;
+  duration?: number;
+  cold_start_duration?: number;
+  run_duration?: number;
 };
 
 export type Run = {
