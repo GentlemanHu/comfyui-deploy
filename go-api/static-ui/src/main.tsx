@@ -15,6 +15,7 @@ import {
   Workflow
 } from "lucide-react";
 import { AuthRequest } from "./authRequest";
+import { DocsPage } from "./docsPage";
 import { MachineDetail } from "./machineDetail";
 import { SharePage } from "./sharePage";
 import { WorkflowDetail } from "./workflowDetail";
@@ -84,7 +85,10 @@ function App() {
   if (machineMatch) {
     return <MachineDetail machineID={decodeURIComponent(machineMatch[1])} onBack={() => navigateTo("/")} />;
   }
-  const [tab, setTab] = useState<"workflows" | "machines" | "keys">("workflows");
+  if (["/examples", "/docs/install", "/docs/endpoints"].includes(window.location.pathname)) {
+    return <DocsPage path={window.location.pathname} />;
+  }
+  const [tab, setTab] = useState<"workflows" | "machines" | "keys">(initialTab());
   const [workflowID, setWorkflowID] = useState("");
   const [machineID, setMachineID] = useState("");
   const session = useResource<Session>("/api/session");
@@ -322,4 +326,10 @@ createRoot(document.getElementById("root")!).render(<App />);
 function navigateTo(path: string) {
   window.history.pushState({}, "", path);
   window.location.reload();
+}
+
+function initialTab(): "workflows" | "machines" | "keys" {
+  if (window.location.pathname === "/machines") return "machines";
+  if (window.location.pathname === "/api-keys") return "keys";
+  return "workflows";
 }
