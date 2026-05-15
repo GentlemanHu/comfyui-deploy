@@ -1,7 +1,8 @@
 import { Copy, Info, Loader2, MoreHorizontal, MoreVertical, Play } from "lucide-react";
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api, type Deployment, type Machine, navigate, type Run, type WorkflowItem, type WorkflowVersion } from "./api";
+import { hasUploadingRunInputs, RunInputField } from "./components/RunInputField";
 import { Button } from "./components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
@@ -9,7 +10,7 @@ import { ScrollArea } from "./components/ui/scroll-area";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { useResource } from "./hooks";
-import { fileToRunInput, getInputsFromWorkflow, type ExternalInputDefinition } from "./lib/externalInputs";
+import { getInputsFromWorkflow } from "./lib/externalInputs";
 import { getRelativeTime } from "./lib/getRelativeTime";
 import { RunsTable } from "./workflowRuns";
 import { WorkflowStatsPanel } from "./workflowStats";
@@ -198,6 +199,7 @@ function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflow
   const inputs = useMemo(() => getInputsFromWorkflow((workflowVersion?.workflow_api as Record<string, any>) || undefined), [workflowVersion]);
   const [values, setValues] = useState<Record<string, any>>({});
   const canRun = Boolean(workflowVersion?.id && machineID);
+  const uploading = hasUploadingRunInputs(values);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -209,8 +211,8 @@ function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflow
           <DialogDescription>{inputs.length > 0 ? "Run your workflow with custom inputs" : "Confirm to run your workflow"}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
-          {inputs.map((item) => <InputField key={item.input_id} item={item} values={values} setValues={setValues} />)}
-          <Button className="gap-2" disabled={!canRun || saving} onClick={async () => {
+          {inputs.map((item) => <RunInputField key={item.input_id} item={item} values={values} setValues={setValues} />)}
+          <Button className="gap-2" disabled={!canRun || saving || uploading} onClick={async () => {
             if (!workflowVersion?.id || !machineID) return;
             setSaving(true);
             try {
@@ -234,49 +236,10 @@ function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflow
           }}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}Run
           </Button>
+          {uploading ? <p className="text-xs text-muted-foreground">Preparing selected files before starting the run.</p> : null}
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function InputField({ item, values, setValues }: { item: ExternalInputDefinition; values: Record<string, any>; setValues: Dispatch<SetStateAction<Record<string, any>>> }) {
-  return (
-    <div className="grid gap-2">
-      <div className="text-sm font-medium">{item.display_name || item.input_id}</div>
-      {item.value_type === "boolean" ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={Boolean(values[item.input_id] ?? item.default_value ?? false)} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.checked }))} />
-          <span>Enabled</span>
-        </label>
-      ) : item.value_type === "file" ? (
-        <div className="grid gap-2">
-          <input
-            className="h-10 rounded-md border bg-background px-3 py-2 text-sm"
-            type="file"
-            accept={item.accept}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setValues((prev) => ({ ...prev, [item.input_id]: { filename: file.name, mime_type: file.type, uploading: true } }));
-              try {
-                const value = await fileToRunInput(file);
-                setValues((prev) => ({ ...prev, [item.input_id]: value }));
-              } catch (error) {
-                toast.error(String(error));
-              }
-            }}
-          />
-          {values[item.input_id]?.filename ? <div className="truncate text-xs text-muted-foreground">{values[item.input_id].filename}</div> : null}
-        </div>
-      ) : item.value_type === "enum" && item.options?.length ? (
-        <select className="h-10 rounded-md border bg-background px-3" value={String(values[item.input_id] ?? item.default_value ?? item.options[0] ?? "")} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.value }))}>
-          {item.options.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
-      ) : (
-        <input className="h-10 rounded-md border bg-background px-3" type={item.value_type === "number" || item.value_type === "integer" ? "number" : "text"} defaultValue={String(item.default_value ?? "")} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: item.value_type === "number" || item.value_type === "integer" ? Number(e.target.value) : e.target.value }))} />
-      )}
-    </div>
   );
 }
 

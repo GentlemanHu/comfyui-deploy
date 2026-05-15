@@ -14,19 +14,25 @@ import (
 )
 
 type S3 struct {
-	cfg    config.Config
-	base   *s3.Client
-	client *s3.PresignClient
+	cfg           config.Config
+	api           *s3.Client
+	presignClient *s3.PresignClient
 }
 
 func NewS3(cfg config.Config) *S3 {
-	base := s3.New(s3.Options{
+	api := s3.New(s3.Options{
+		Region:       cfg.SpacesRegion,
+		BaseEndpoint: aws.String(cfg.SpacesEndpoint),
+		Credentials:  credentials.NewStaticCredentialsProvider(cfg.SpacesKey, cfg.SpacesSecret, ""),
+		UsePathStyle: cfg.SpacesForcePathStyle,
+	})
+	public := s3.New(s3.Options{
 		Region:       cfg.SpacesRegion,
 		BaseEndpoint: aws.String(cfg.SpacesPublicEndpoint),
 		Credentials:  credentials.NewStaticCredentialsProvider(cfg.SpacesKey, cfg.SpacesSecret, ""),
 		UsePathStyle: cfg.SpacesForcePathStyle,
 	})
-	return &S3{cfg: cfg, base: base, client: s3.NewPresignClient(base)}
+	return &S3{cfg: cfg, api: api, presignClient: s3.NewPresignClient(public)}
 }
 
 func (s *S3) PresignPut(ctx context.Context, key, contentType string, public bool) (string, error) {
@@ -38,7 +44,7 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, public boo
 	if public {
 		input.ACL = "public-read"
 	}
-	result, err := s.client.PresignPutObject(ctx, input, s3.WithPresignExpires(5*time.Minute))
+	result, err := s.presignClient.PresignPutObject(ctx, input, s3.WithPresignExpires(5*time.Minute))
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +52,7 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, public boo
 }
 
 func (s *S3) PresignGet(ctx context.Context, key string, expires time.Duration) (string, error) {
-	result, err := s.client.PresignGetObject(ctx, &s3.GetObjectInput{
+	result, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.cfg.SpacesBucket),
 		Key:    aws.String(key),
 	}, s3.WithPresignExpires(expires))
@@ -67,7 +73,7 @@ func (s *S3) PutObject(ctx context.Context, key, contentType string, body []byte
 	if public {
 		input.ACL = "public-read"
 	}
-	_, err := s.base.PutObject(ctx, input)
+	_, err := s.api.PutObject(ctx, input)
 	return err
 }
 

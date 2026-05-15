@@ -24,13 +24,7 @@ func (s *Server) uploadURL(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "file size exceeds limit"})
 		return
 	}
-	ext := "bin"
-	switch contentType {
-	case "image/png":
-		ext = "png"
-	case "image/jpg", "image/jpeg":
-		ext = "jpeg"
-	}
+	ext := strings.TrimPrefix(extensionForContentType(contentType, ""), ".")
 	fileID := "img-" + uuid.NewString()
 	key := "inputs/" + fileID + "." + ext
 	url, err := s.storage.PresignPut(r.Context(), key, contentType, true)
@@ -70,10 +64,21 @@ func (s *Server) viewFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "file is required"})
 		return
 	}
+	if !isSafeViewKey(file) {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "file path is not allowed"})
+		return
+	}
 	u, err := s.storage.PresignGet(r.Context(), file, 15*time.Minute)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
+}
+
+func isSafeViewKey(file string) bool {
+	if strings.Contains(file, "..") || strings.Contains(file, "\\") {
+		return false
+	}
+	return strings.HasPrefix(file, "outputs/runs/") || strings.HasPrefix(file, "inputs/")
 }

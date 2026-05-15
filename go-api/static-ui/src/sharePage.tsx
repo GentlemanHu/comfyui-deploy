@@ -3,10 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { navigate, type Run } from "./api";
 import { MediaPreviewGrid, extractMediaItems } from "./components/MediaPreview";
+import { hasUploadingRunInputs, RunInputField } from "./components/RunInputField";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { Input } from "./components/ui/input";
-import { fileToRunInput, getInputsFromWorkflow, getDefaultInputValues, type ExternalInputDefinition } from "./lib/externalInputs";
+import { getInputsFromWorkflow, getDefaultInputValues, type ExternalInputDefinition } from "./lib/externalInputs";
 import { getRelativeTime } from "./lib/getRelativeTime";
 
 type ShareData = {
@@ -202,57 +203,17 @@ function ShareRunForm({ shareID, accessKey, inputs, activeRun, onStarted }: { de
     setValues(getDefaultInputValues(inputs));
   }, [inputs]);
 
+  const uploading = hasUploadingRunInputs(values);
+
   return (
     <div className="space-y-4">
       {inputs.length > 0 ? inputs.map((item) => (
-        <div key={item.input_id} className="grid gap-2">
-          <div className="text-sm font-medium">{item.display_name || item.input_id}</div>
-          {item.value_type === "boolean" ? (
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={Boolean(values[item.input_id])} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.checked }))} />
-              <span>Enabled</span>
-            </label>
-          ) : item.value_type === "file" ? (
-            <div className="grid gap-2">
-              <Input
-                type="file"
-                accept={item.accept}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setValues((prev) => ({ ...prev, [item.input_id]: { filename: file.name, mime_type: file.type, uploading: true } }));
-                  try {
-                    const value = await fileToRunInput(file);
-                    setValues((prev) => ({ ...prev, [item.input_id]: value }));
-                  } catch (error) {
-                    toast.error(String(error));
-                  }
-                }}
-              />
-              {values[item.input_id]?.filename ? <div className="truncate text-xs text-muted-foreground">{values[item.input_id].filename}</div> : null}
-            </div>
-          ) : item.value_type === "enum" && item.options?.length ? (
-            <select className="h-10 rounded-md border bg-background px-3" value={String(values[item.input_id] ?? "")} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.value }))}>
-              {item.options.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          ) : (
-            <Input
-              type={item.value_type === "number" || item.value_type === "integer" ? "number" : "text"}
-              value={String(values[item.input_id] ?? "")}
-              onChange={(e) => setValues((prev) => ({
-                ...prev,
-                [item.input_id]: item.value_type === "number" || item.value_type === "integer"
-                  ? (e.target.value === "" ? "" : Number(e.target.value))
-                  : e.target.value,
-              }))}
-            />
-          )}
-        </div>
+        <RunInputField key={item.input_id} item={item} values={values} setValues={setValues} />
       )) : <div className="text-sm text-muted-foreground">No public inputs. Click run to execute directly.</div>}
 
       <Button
         className="gap-2"
-        disabled={running || activeRun}
+        disabled={running || activeRun || uploading}
         onClick={async () => {
           setRunning(true);
           try {
@@ -272,6 +233,7 @@ function ShareRunForm({ shareID, accessKey, inputs, activeRun, onStarted }: { de
         {running || activeRun ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
         {activeRun ? "Running" : "Run"}
       </Button>
+      {uploading ? <p className="text-xs text-muted-foreground">Preparing selected files before starting the run.</p> : null}
       {activeRun ? <p className="text-xs text-muted-foreground">A generation is already running on this page. Wait for it to finish before starting another one.</p> : null}
     </div>
   );
