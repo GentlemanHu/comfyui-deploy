@@ -29,6 +29,8 @@ type ShareData = {
 type RunStatus = {
   run_id: string;
   status: string;
+  progress?: number;
+  current_node?: string | null;
 };
 
 type ShareRunOutput = {
@@ -67,7 +69,7 @@ export function SharePage({ shareID }: { shareID: string }) {
     const timer = window.setInterval(async () => {
       try {
         const run = await shareApi<Run>(shareID, `/run/${runState.run_id}`, accessKey);
-        setRunState({ run_id: run.id, status: run.status });
+        setRunState({ run_id: run.id, status: run.status, progress: run.progress, current_node: run.current_node });
         setRecentRuns((prev) => saveRecentRun(shareID, run, prev));
         const outputs = await shareApi<ShareRunOutput[]>(shareID, `/run/${runState.run_id}/outputs`, accessKey);
         setRunOutputs(outputs);
@@ -105,6 +107,7 @@ export function SharePage({ shareID }: { shareID: string }) {
   const item = shared.data.deployment;
   const inputs = getInputsFromWorkflow(item.workflow_api);
   const title = shared.data.owner_name ? `${shared.data.owner_name} / ${shared.data.workflow_name}` : shared.data.workflow_name;
+  const activeRun = runState && !["success", "failed"].includes(runState.status);
 
   return (
     <div className="mt-4 grid max-h-[calc(100dvh-100px)] w-full grid-rows-[1fr,1fr] gap-4 lg:grid-cols-[minmax(auto,500px),1fr]">
@@ -144,6 +147,7 @@ export function SharePage({ shareID }: { shareID: string }) {
             shareID={shareID}
             accessKey={accessKey}
             inputs={inputs}
+            activeRun={Boolean(activeRun)}
             onStarted={(runID) => {
               setRunOutputs([]);
               setRunState({ run_id: runID, status: "preparing" });
@@ -157,6 +161,7 @@ export function SharePage({ shareID }: { shareID: string }) {
           <div className="text-sm text-muted-foreground">Run outputs</div>
         </div>
         <div className="p-6 pt-0">
+          {runState ? <ShareRunStatus state={runState} /> : null}
           {runOutputs.length > 0 ? (
             <MediaPreviewGrid
               items={runOutputs.flatMap((output) => extractMediaItems(output.data))}
@@ -181,7 +186,7 @@ export function SharePage({ shareID }: { shareID: string }) {
   );
 }
 
-function ShareRunForm({ shareID, accessKey, inputs, onStarted }: { deploymentID: string; shareID: string; accessKey: string; inputs: ExternalInputDefinition[]; onStarted: (runID: string) => void }) {
+function ShareRunForm({ shareID, accessKey, inputs, activeRun, onStarted }: { deploymentID: string; shareID: string; accessKey: string; inputs: ExternalInputDefinition[]; activeRun: boolean; onStarted: (runID: string) => void }) {
   const [values, setValues] = useState<Record<string, string | number | boolean>>(() => getDefaultInputValues(inputs));
   const [running, setRunning] = useState(false);
 
@@ -220,7 +225,7 @@ function ShareRunForm({ shareID, accessKey, inputs, onStarted }: { deploymentID:
 
       <Button
         className="gap-2"
-        disabled={running}
+        disabled={running || activeRun}
         onClick={async () => {
           setRunning(true);
           try {
@@ -237,9 +242,28 @@ function ShareRunForm({ shareID, accessKey, inputs, onStarted }: { deploymentID:
           }
         }}
       >
-        {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-        Run
+        {running || activeRun ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+        {activeRun ? "Running" : "Run"}
       </Button>
+      {activeRun ? <p className="text-xs text-muted-foreground">A generation is already running on this page. Wait for it to finish before starting another one.</p> : null}
+    </div>
+  );
+}
+
+function ShareRunStatus({ state }: { state: RunStatus }) {
+  const progress = normalizeProgress(state.progress, state.status);
+  return (
+    <div className="mb-4 rounded-lg border bg-background/70 p-4">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <div>
+          <div className="font-medium capitalize">{state.status}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{state.current_node || state.run_id}</div>
+        </div>
+        <div className="text-sm font-medium">{Math.round(progress)}%</div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-zinc-900 transition-all" style={{ width: `${progress}%` }} />
+      </div>
     </div>
   );
 }
@@ -286,4 +310,11 @@ function saveRecentRun(shareID: string, run: Run, previous: Run[]) {
   const next = [run, ...previous.filter((item) => item.id !== run.id)].slice(0, 12);
   window.localStorage.setItem(`share-runs:${shareID}`, JSON.stringify(next));
   return next;
+}
+
+function normalizeProgress(value: number | undefined, status: string) {
+  if (status === "success") return 100;
+  if (typeof value !== "number") return status === "preparing" ? 2 : 8;
+  if (value > 0 && value <= 1) return value * 100;
+  return Math.max(0, Math.min(100, value));
 }

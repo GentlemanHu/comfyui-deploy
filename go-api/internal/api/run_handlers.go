@@ -164,8 +164,13 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Progress != nil || strings.TrimSpace(req.CurrentNode) != "" || len(liveStatus) > 0 {
 		var liveArg any
+		var progressArg any
 		if len(liveStatus) > 0 {
 			liveArg = liveStatus
+		}
+		if req.Progress != nil {
+			progress := normalizeIncomingProgress(*req.Progress)
+			progressArg = progress
 		}
 		_, err := s.store.DB.ExecContext(r.Context(), `
 			UPDATE comfyui_deploy.workflow_runs
@@ -175,7 +180,7 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 			    status = CASE WHEN status NOT IN ('success','failed') THEN 'running'::workflow_run_status ELSE status END,
 			    started_at = COALESCE(started_at, now())
 			WHERE id = $1
-		`, req.RunID, req.Progress, strings.TrimSpace(req.CurrentNode), liveArg)
+		`, req.RunID, progressArg, strings.TrimSpace(req.CurrentNode), liveArg)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 			return
@@ -185,6 +190,8 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 		_, err := s.store.DB.ExecContext(r.Context(), `
 			UPDATE comfyui_deploy.workflow_runs
 			SET status = $1::workflow_run_status,
+				progress = CASE WHEN $1 = 'success' THEN 100 ELSE progress END,
+				current_node = CASE WHEN $1 IN ('success','failed') THEN NULL ELSE current_node END,
 				started_at = CASE WHEN $1 IN ('running','uploading','success','failed') THEN COALESCE(started_at, now()) ELSE started_at END,
 				ended_at = CASE WHEN $1 IN ('success','failed') THEN now() ELSE NULL END
 			WHERE id = $2
@@ -195,6 +202,19 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "success"})
+}
+
+func normalizeIncomingProgress(value float64) float64 {
+	if value > 0 && value <= 1 {
+		return value * 100
+	}
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func normalizeRunOrigin(value string, fallback string) string {

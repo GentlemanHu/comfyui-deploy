@@ -75,7 +75,7 @@ function RunRow({ run }: { run: Run }) {
 }
 
 function RunProgress({ run }: { run: Run }) {
-  const progress = typeof run.progress === "number" ? Math.max(0, Math.min(100, run.progress)) : undefined;
+  const progress = normalizedRunProgress(run);
   if (progress === undefined && !run.current_node) return <span className="text-muted-foreground">-</span>;
   return (
     <div className="min-w-[140px]">
@@ -88,6 +88,13 @@ function RunProgress({ run }: { run: Run }) {
       </div>
     </div>
   );
+}
+
+function normalizedRunProgress(run: Run) {
+  if (run.status === "success") return 100;
+  if (typeof run.progress !== "number") return undefined;
+  if (run.progress > 0 && run.progress <= 1) return run.progress * 100;
+  return Math.max(0, Math.min(100, run.progress));
 }
 
 function RunOutputsTable({ outputs, runID, running }: { outputs: RunOutput[]; runID: string; running: boolean }) {

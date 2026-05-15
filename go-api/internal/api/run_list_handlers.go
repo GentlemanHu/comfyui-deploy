@@ -228,6 +228,8 @@ func (s *Server) finalizeStaleRunsForWorkflow(r *http.Request, workflowID string
 	_, err := s.store.DB.ExecContext(r.Context(), `
 		UPDATE comfyui_deploy.workflow_runs wr
 		SET status = 'success',
+		    progress = 100,
+		    current_node = NULL,
 		    ended_at = COALESCE(ended_at, latest_output.latest_at)
 		FROM (
 			SELECT run_id, MAX(updated_at) AS latest_at
@@ -247,6 +249,8 @@ func (s *Server) finalizeStaleRun(r *http.Request, runID string) error {
 	_, err := s.store.DB.ExecContext(r.Context(), `
 		UPDATE comfyui_deploy.workflow_runs wr
 		SET status = 'success',
+		    progress = 100,
+		    current_node = NULL,
 		    ended_at = COALESCE(ended_at, latest_output.latest_at)
 		FROM (
 			SELECT run_id, MAX(updated_at) AS latest_at
@@ -302,7 +306,10 @@ func scanRun(row rowScanner) (runRecord, error) {
 		item.EndedAt = &endedAt.Time
 	}
 	if progress.Valid {
-		value := progress.Float64
+		value := normalizeProgressValue(progress.Float64, item.Status)
+		item.Progress = &value
+	} else if item.Status == "success" {
+		value := 100.0
 		item.Progress = &value
 	}
 	item.CurrentNode = ptrNullString(currentNode)
@@ -312,6 +319,22 @@ func scanRun(row rowScanner) (runRecord, error) {
 		item.Version = &v
 	}
 	return item, err
+}
+
+func normalizeProgressValue(value float64, status string) float64 {
+	if status == "success" {
+		return 100
+	}
+	if value > 0 && value <= 1 {
+		return value * 100
+	}
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func (s *Server) addPublicOutputURLs(data json.RawMessage, runID string) json.RawMessage {
