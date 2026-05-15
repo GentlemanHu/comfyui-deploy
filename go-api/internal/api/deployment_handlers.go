@@ -438,17 +438,25 @@ func shareAccessAllowed(r *http.Request, accessKey string) bool {
 
 func (s *Server) shareAccessAllowedByID(r *http.Request, shareID string) bool {
 	var accessKey sql.NullString
+	var userID string
+	var orgID sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
-		SELECT access_key
+		SELECT access_key, user_id, org_id
 		FROM comfyui_deploy.deployments
 		WHERE environment = 'public-share'
 		  AND (id::text = $1 OR share_slug = $1)
 		LIMIT 1
-	`, shareID).Scan(&accessKey)
+	`, shareID).Scan(&accessKey, &userID, &orgID)
 	if err != nil {
 		return false
 	}
-	return !accessKey.Valid || shareAccessAllowed(r, accessKey.String)
+	if !accessKey.Valid || strings.TrimSpace(accessKey.String) == "" || shareAccessAllowed(r, accessKey.String) {
+		return true
+	}
+	if user, ok := s.userFromRequest(r); ok {
+		return ownsDeploymentUser(user, userID, ptrNullString(orgID))
+	}
+	return false
 }
 
 func ownsDeploymentUser(user auth.User, deploymentUserID string, deploymentOrgID *string) bool {
