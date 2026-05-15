@@ -67,18 +67,22 @@ export function SharePage({ shareID }: { shareID: string }) {
   useEffect(() => {
     if (!runState?.run_id || runState.status === "success" || runState.status === "failed") return;
     const timer = window.setInterval(async () => {
-      try {
-        const run = await shareApi<Run>(shareID, `/run/${runState.run_id}`, accessKey);
-        setRunState({ run_id: run.id, status: run.status, progress: run.progress, current_node: run.current_node });
-        setRecentRuns((prev) => saveRecentRun(shareID, run, prev));
-        const outputs = await shareApi<ShareRunOutput[]>(shareID, `/run/${runState.run_id}/outputs`, accessKey);
-        setRunOutputs(outputs);
-      } catch (error) {
-        console.error(error);
-      }
+      void loadRunAndOutputs(runState.run_id);
     }, 2000);
     return () => window.clearInterval(timer);
   }, [runState]);
+
+  const loadRunAndOutputs = async (runID: string) => {
+    try {
+      const run = await shareApi<Run>(shareID, `/run/${runID}`, accessKey);
+      setRunState({ run_id: run.id, status: run.status, progress: run.progress, current_node: run.current_node });
+      setRecentRuns((prev) => saveRecentRun(shareID, run, prev));
+      const outputs = await shareApi<ShareRunOutput[]>(shareID, `/run/${run.id}/outputs`, accessKey);
+      setRunOutputs(outputs);
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
 
   if (shared.loading) {
     return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>;
@@ -179,7 +183,11 @@ export function SharePage({ shareID }: { shareID: string }) {
               emptyText="No preview outputs."
             />
           )}
-          {recentRuns.length > 0 ? <RecentShareRuns runs={recentRuns} onOpen={(run) => setRunState({ run_id: run.id, status: run.status })} /> : null}
+          {recentRuns.length > 0 ? <RecentShareRuns runs={recentRuns} onOpen={(run) => {
+            setRunOutputs([]);
+            setRunState({ run_id: run.id, status: run.status, progress: run.progress, current_node: run.current_node });
+            void loadRunAndOutputs(run.id);
+          }} /> : null}
         </div>
       </div>
     </div>
