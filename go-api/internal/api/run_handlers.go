@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -79,12 +80,57 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"run_id": runID})
 }
 
+func (s *Server) createShareRun(w http.ResponseWriter, r *http.Request) {
+	var req createRunRequest
+	if err := readJSONLoose(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	shareID := strings.TrimSpace(chi.URLParam(r, "share_id"))
+	if !s.shareAccessAllowedByID(r, shareID) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "share access key required", "access_required": true})
+		return
+	}
+	dep, err := s.fetchPublicShareDeployment(r, shareID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, apiError{Error: "share not found"})
+		return
+	}
+	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, req.Inputs)
+	if dep.Machine.Type == "classic" && !isFullWorkflowGraph(dep.Version.Workflow) {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: "This workflow version does not contain a full ComfyUI graph."})
+		return
+	}
+	runID := uuid.NewString()
+	inputsRaw, _ := json.Marshal(req.Inputs)
+	_, err = s.store.DB.ExecContext(r.Context(), `
+		INSERT INTO comfyui_deploy.workflow_runs
+			(id, workflow_id, workflow_version_id, workflow_inputs, machine_id, origin)
+		VALUES ($1, $2, $3, $4, $5, 'public-share')
+	`, runID, dep.WorkflowID, dep.WorkflowVersionID, inputsRaw, dep.MachineID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	if err := s.dispatchRun(r, dep, runID, workflowAPI); err != nil {
+		_, _ = s.store.DB.ExecContext(r.Context(), `UPDATE comfyui_deploy.workflow_runs SET status = 'failed', ended_at = now() WHERE id = $1`, runID)
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	_, _ = s.store.DB.ExecContext(r.Context(), `UPDATE comfyui_deploy.workflow_runs SET status = 'running', started_at = now() WHERE id = $1`, runID)
+	writeJSON(w, http.StatusOK, map[string]string{"run_id": runID})
+}
+
 func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RunID      string          `json:"run_id"`
-		Status     string          `json:"status"`
-		OutputData json.RawMessage `json:"output_data"`
-		Comment    string          `json:"comment"`
+		RunID       string          `json:"run_id"`
+		Status      string          `json:"status"`
+		OutputData  json.RawMessage `json:"output_data"`
+		Comment     string          `json:"comment"`
+		Progress    *float64        `json:"progress"`
+		CurrentNode string          `json:"current_node"`
+		LiveStatus  json.RawMessage `json:"live_status"`
+		NodeMeta    json.RawMessage `json:"node_meta"`
 	}
 	if err := readJSONLoose(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
@@ -110,6 +156,29 @@ func (s *Server) updateRun(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 				return
 			}
+		}
+	}
+	liveStatus := req.LiveStatus
+	if len(liveStatus) == 0 {
+		liveStatus = req.NodeMeta
+	}
+	if req.Progress != nil || strings.TrimSpace(req.CurrentNode) != "" || len(liveStatus) > 0 {
+		var liveArg any
+		if len(liveStatus) > 0 {
+			liveArg = liveStatus
+		}
+		_, err := s.store.DB.ExecContext(r.Context(), `
+			UPDATE comfyui_deploy.workflow_runs
+			SET progress = COALESCE($2, progress),
+			    current_node = COALESCE(NULLIF($3, ''), current_node),
+			    live_status = COALESCE($4, live_status),
+			    status = CASE WHEN status NOT IN ('success','failed') THEN 'running'::workflow_run_status ELSE status END,
+			    started_at = COALESCE(started_at, now())
+			WHERE id = $1
+		`, req.RunID, req.Progress, strings.TrimSpace(req.CurrentNode), liveArg)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+			return
 		}
 	}
 	if status, ok := normalizeRunStatus(req.Status); ok {

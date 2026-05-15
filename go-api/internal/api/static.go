@@ -34,6 +34,9 @@ func (s *Server) authorizeStatic(w http.ResponseWriter, r *http.Request) bool {
 	if strings.TrimSpace(s.cfg.LocalAuthPassword) == "" {
 		return true
 	}
+	if strings.HasPrefix(r.URL.Path, "/share/") {
+		return true
+	}
 	if _, ok := s.basicAuthUser(r); ok {
 		return true
 	}

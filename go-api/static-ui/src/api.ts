@@ -83,6 +83,9 @@ export type Run = {
   created_at: string;
   started_at?: string | null;
   ended_at?: string | null;
+  progress?: number;
+  current_node?: string | null;
+  live_status?: unknown;
   machine_name?: string;
   version?: number;
 };

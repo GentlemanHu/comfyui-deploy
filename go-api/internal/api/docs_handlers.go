@@ -129,17 +129,26 @@ func (s *Server) apiDoc(w http.ResponseWriter, r *http.Request) {
 				"get": endpointDoc("Redirect to a signed read URL for a stored file.", false, map[string]any{"file": "outputs/runs/<run_id>/image.webp"}, nil),
 			},
 			"/share/{share_id}": map[string]any{
-				"get": endpointDoc("Get public share page data.", false, nil, map[string]any{"workflow_name": "Workflow", "deployment": map[string]any{}}),
+				"get": endpointDoc("Get public share page data. If the share has an access key, send X-Share-Key.", false, nil, map[string]any{"workflow_name": "Workflow", "deployment": map[string]any{"access_key_enabled": true}}),
+			},
+			"/share/{share_id}/run": map[string]any{
+				"post": endpointDoc("Run a public share. If the share has an access key, send X-Share-Key.", false, map[string]any{"inputs": map[string]any{}}, map[string]any{"run_id": "uuid"}),
+			},
+			"/share/{share_id}/run/{run_id}": map[string]any{
+				"get": endpointDoc("Poll a public-share run without a Bearer API key. If the share has an access key, send X-Share-Key.", false, nil, map[string]any{"id": "uuid", "status": "running", "progress": 80}),
+			},
+			"/share/{share_id}/run/{run_id}/outputs": map[string]any{
+				"get": endpointDoc("List staged outputs for a public-share run. If the share has an access key, send X-Share-Key.", false, nil, []any{map[string]any{"id": "uuid", "data": map[string]any{}}}),
 			},
 			"/share/{share_id}/clone-workflow": map[string]any{
-				"post": endpointDoc("Clone public share workflow into current account.", false, nil, map[string]any{"workflow_id": "uuid"}),
+				"post": endpointDoc("Clone public share workflow into the authenticated account.", true, nil, map[string]any{"workflow_id": "uuid"}),
 			},
 			"/share/{share_id}/clone-machine": map[string]any{
-				"post": endpointDoc("Clone public share machine into current account.", false, nil, map[string]any{"machine_id": "uuid"}),
+				"post": endpointDoc("Clone public share machine into the authenticated account.", true, nil, map[string]any{"machine_id": "uuid"}),
 			},
 			"/share/{share_id}/settings": map[string]any{
-				"patch":  endpointDoc("Update share settings.", false, map[string]any{"description": "text", "showcase_media": []any{}}, map[string]any{"message": "Info Updated"}),
-				"delete": endpointDoc("Delete share deployment/settings.", false, nil, map[string]any{"deleted": true}),
+				"patch":  endpointDoc("Update share settings, including per-share access_key.", true, map[string]any{"description": "text", "showcase_media": []any{}, "access_key": "optional page key"}, map[string]any{"message": "Info Updated"}),
+				"delete": endpointDoc("Delete share deployment/settings.", true, nil, map[string]any{"deleted": true}),
 			},
 		},
 	})

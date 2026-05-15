@@ -9,6 +9,7 @@ import { Textarea } from "./components/ui/textarea";
 export function ShareSettings({ shareID }: { shareID: string }) {
   const [description, setDescription] = useState("");
   const [media, setMedia] = useState("");
+  const [accessKey, setAccessKey] = useState("");
   const [deploymentID, setDeploymentID] = useState(shareID);
   const [shareSlug, setShareSlug] = useState(shareID);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,7 @@ export function ShareSettings({ shareID }: { shareID: string }) {
       setDeploymentID(data.deployment.id);
       setShareSlug(data.deployment.share_slug ?? data.deployment.id);
       setDescription(data.deployment.description ?? "");
+      setAccessKey(data.deployment.access_key ?? "");
       setMedia(JSON.stringify(data.deployment.showcase_media ?? [], null, 2));
     }).catch((err) => toast.error(String(err))).finally(() => setLoading(false));
   }, [shareID]);
@@ -37,6 +39,11 @@ export function ShareSettings({ shareID }: { shareID: string }) {
         </div>
         <div className="grid gap-4 p-6">
           <Input value={deploymentID} disabled />
+          <div className="grid gap-2">
+            <div className="text-sm font-medium">Page key</div>
+            <Input value={accessKey} onChange={(e) => setAccessKey(e.target.value)} placeholder="Optional. Visitors must enter this key before viewing or running." disabled={loading} />
+            <p className="text-xs text-muted-foreground">Leave empty for a public page. This key is per share page.</p>
+          </div>
           <Textarea className="min-h-32" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" disabled={loading} />
           <Textarea className="min-h-40 font-mono text-xs" value={media} onChange={(e) => setMedia(e.target.value)} placeholder="Showcase media JSON" disabled={loading} />
           <div className="flex flex-wrap justify-end gap-2">
@@ -61,7 +68,7 @@ export function ShareSettings({ shareID }: { shareID: string }) {
                   toast.error("Invalid showcase media JSON");
                   return;
                 }
-                await api(`/api/share/${deploymentID}/settings`, { method: "PATCH", body: JSON.stringify({ description, showcase_media }) });
+                await api(`/api/share/${deploymentID}/settings`, { method: "PATCH", body: JSON.stringify({ description, showcase_media, access_key: accessKey }) });
                 toast.success("Info Updated");
               }}
             >

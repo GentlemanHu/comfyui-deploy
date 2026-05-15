@@ -21,6 +21,7 @@ export function RunsTable({ data }: { data: Run[] }) {
             <TableHead className="truncate">Time</TableHead>
             <TableHead className="truncate">Version</TableHead>
             <TableHead className="truncate">Origin</TableHead>
+            <TableHead className="truncate">Progress</TableHead>
             <TableHead className="text-right">Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -48,6 +49,7 @@ function RunRow({ run }: { run: Run }) {
         <TableCell className="truncate">{getRelativeTime(run.created_at)}</TableCell>
         <TableCell>{run.version ?? "-"}</TableCell>
         <TableCell><span className="inline-flex items-center gap-x-1.5 rounded-md border px-2 py-0.5 text-sm font-medium text-foreground truncate">{run.origin}</span></TableCell>
+        <TableCell><RunProgress run={run} /></TableCell>
         <TableCell className="text-right"><span className={statusClassName(run.status)}>{run.status}</span></TableCell>
       </TableRow>
       <DialogContent className="max-w-4xl">
@@ -55,7 +57,7 @@ function RunRow({ run }: { run: Run }) {
           <DialogTitle>Run outputs</DialogTitle>
           <DialogDescription>You can view your run&apos;s outputs here</DialogDescription>
         </DialogHeader>
-        {outputs.loading ? (
+        {outputs.loading && !outputs.data ? (
           <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : (outputs.data ?? []).length > 0 ? (
           <RunOutputsTable outputs={outputs.data ?? []} runID={run.id} running={running} />
@@ -69,6 +71,22 @@ function RunRow({ run }: { run: Run }) {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RunProgress({ run }: { run: Run }) {
+  const progress = typeof run.progress === "number" ? Math.max(0, Math.min(100, run.progress)) : undefined;
+  if (progress === undefined && !run.current_node) return <span className="text-muted-foreground">-</span>;
+  return (
+    <div className="min-w-[140px]">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="truncate text-muted-foreground">{run.current_node || "Running"}</span>
+        {progress !== undefined ? <span>{Math.round(progress)}%</span> : null}
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-zinc-900 transition-all" style={{ width: `${progress ?? 12}%` }} />
+      </div>
+    </div>
   );
 }
 

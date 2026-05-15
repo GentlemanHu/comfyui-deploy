@@ -1,8 +1,7 @@
-import { Loader2, MoreVertical, Play } from "lucide-react";
+import { KeyRound, Loader2, MoreVertical, Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { api, navigate } from "./api";
-import { useResource } from "./hooks";
+import { navigate, type Run } from "./api";
 import { MediaPreviewGrid, extractMediaItems } from "./components/MediaPreview";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
@@ -38,17 +37,39 @@ type ShareRunOutput = {
 };
 
 export function SharePage({ shareID }: { shareID: string }) {
-  const shared = useResource<ShareData>(`/api/share/${shareID}`);
+  const [shared, setShared] = useState<{ data: ShareData | null; loading: boolean; error: string; accessRequired: boolean }>({ data: null, loading: true, error: "", accessRequired: false });
   const [runState, setRunState] = useState<RunStatus | null>(null);
   const [runOutputs, setRunOutputs] = useState<ShareRunOutput[]>([]);
+  const [accessKey, setAccessKey] = useState(() => window.localStorage.getItem(`share-key:${shareID}`) ?? "");
+  const [recentRuns, setRecentRuns] = useState<Run[]>(() => readRecentRuns(shareID));
+
+  const loadShare = async (key = accessKey) => {
+    setShared((prev) => ({ ...prev, loading: true, error: "" }));
+    const response = await fetch(`/api/share/${shareID}`, { headers: shareHeaders(key), credentials: "include" });
+    if (response.status === 401) {
+      setShared({ data: null, loading: false, error: "", accessRequired: true });
+      return;
+    }
+    if (!response.ok) {
+      setShared({ data: null, loading: false, error: await response.text(), accessRequired: false });
+      return;
+    }
+    const data = await response.json() as ShareData;
+    setShared({ data, loading: false, error: "", accessRequired: false });
+  };
+
+  useEffect(() => {
+    void loadShare();
+  }, [shareID]);
 
   useEffect(() => {
     if (!runState?.run_id || runState.status === "success" || runState.status === "failed") return;
     const timer = window.setInterval(async () => {
       try {
-        const run = await api<{ id: string; status: string }>(`/api/run/${runState.run_id}`);
+        const run = await shareApi<Run>(shareID, `/run/${runState.run_id}`, accessKey);
         setRunState({ run_id: run.id, status: run.status });
-        const outputs = await api<ShareRunOutput[]>(`/api/run/${runState.run_id}/outputs`);
+        setRecentRuns((prev) => saveRecentRun(shareID, run, prev));
+        const outputs = await shareApi<ShareRunOutput[]>(shareID, `/run/${runState.run_id}/outputs`, accessKey);
         setRunOutputs(outputs);
       } catch (error) {
         console.error(error);
@@ -59,6 +80,22 @@ export function SharePage({ shareID }: { shareID: string }) {
 
   if (shared.loading) {
     return <div className="flex h-full w-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+  }
+
+  if (shared.accessRequired) {
+    return (
+      <div className="flex min-h-dvh w-full items-center justify-center bg-white px-6">
+        <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-2 text-2xl font-semibold"><KeyRound className="h-5 w-5" />Private share</div>
+          <p className="mt-2 text-sm text-muted-foreground">Enter the page key from the owner to open this share.</p>
+          <Input className="mt-5" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} placeholder="Share key" type="password" />
+          <Button className="mt-4 w-full" onClick={async () => {
+            window.localStorage.setItem(`share-key:${shareID}`, accessKey);
+            await loadShare(accessKey);
+          }}>Open share</Button>
+        </div>
+      </div>
+    );
   }
 
   if (shared.error || !shared.data) {
@@ -81,14 +118,14 @@ export function SharePage({ shareID }: { shareID: string }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56">
                 <DropdownMenuItem onClick={async () => {
-                  const result = await api<{ workflow_id: string; message: string }>(`/api/share/${shareID}/clone-workflow`, { method: "POST" });
+                  const result = await shareApi<{ workflow_id: string; message: string }>(shareID, "/clone-workflow", accessKey, { method: "POST" });
                   toast.success(result.message);
                   navigate(`/workflows/${result.workflow_id}`);
                 }}>
                   Workflow
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={async () => {
-                  const result = await api<{ machine_id: string; message: string }>(`/api/share/${shareID}/clone-machine`, { method: "POST" });
+                  const result = await shareApi<{ machine_id: string; message: string }>(shareID, "/clone-machine", accessKey, { method: "POST" });
                   toast.success(result.message);
                   navigate(`/machines/${result.machine_id}`);
                 }}>
@@ -104,6 +141,8 @@ export function SharePage({ shareID }: { shareID: string }) {
           {item.description ? <div>{item.description}</div> : null}
           <ShareRunForm
             deploymentID={item.id}
+            shareID={shareID}
+            accessKey={accessKey}
             inputs={inputs}
             onStarted={(runID) => {
               setRunOutputs([]);
@@ -135,13 +174,14 @@ export function SharePage({ shareID }: { shareID: string }) {
               emptyText="No preview outputs."
             />
           )}
+          {recentRuns.length > 0 ? <RecentShareRuns runs={recentRuns} onOpen={(run) => setRunState({ run_id: run.id, status: run.status })} /> : null}
         </div>
       </div>
     </div>
   );
 }
 
-function ShareRunForm({ deploymentID, inputs, onStarted }: { deploymentID: string; inputs: ExternalInputDefinition[]; onStarted: (runID: string) => void }) {
+function ShareRunForm({ shareID, accessKey, inputs, onStarted }: { deploymentID: string; shareID: string; accessKey: string; inputs: ExternalInputDefinition[]; onStarted: (runID: string) => void }) {
   const [values, setValues] = useState<Record<string, string | number | boolean>>(() => getDefaultInputValues(inputs));
   const [running, setRunning] = useState(false);
 
@@ -184,9 +224,9 @@ function ShareRunForm({ deploymentID, inputs, onStarted }: { deploymentID: strin
         onClick={async () => {
           setRunning(true);
           try {
-            const result = await api<{ run_id: string }>(`/api/run`, {
+            const result = await shareApi<{ run_id: string }>(shareID, "/run", accessKey, {
               method: "POST",
-              body: JSON.stringify({ deployment_id: deploymentID, inputs: Object.keys(values).length > 0 ? values : undefined, run_origin: "public-share" }),
+              body: JSON.stringify({ inputs: Object.keys(values).length > 0 ? values : undefined, run_origin: "public-share" }),
             });
             onStarted(result.run_id);
             toast.success(`Run started: ${result.run_id}`);
@@ -202,4 +242,48 @@ function ShareRunForm({ deploymentID, inputs, onStarted }: { deploymentID: strin
       </Button>
     </div>
   );
+}
+
+function RecentShareRuns({ runs, onOpen }: { runs: Run[]; onOpen: (run: Run) => void }) {
+  return (
+    <div className="mt-6 rounded-lg border">
+      <div className="border-b px-4 py-3 text-sm font-medium">Recent generations on this device</div>
+      <div className="divide-y">
+        {runs.slice(0, 6).map((run) => (
+          <button key={run.id} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-muted/50" onClick={() => onOpen(run)}>
+            <span className="truncate font-mono text-xs">{run.id}</span>
+            <span className="shrink-0 rounded-md border px-2 py-0.5 text-xs">{run.status}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+async function shareApi<T>(shareID: string, path: string, accessKey: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/share/${shareID}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...shareHeaders(accessKey), ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json() as T;
+}
+
+function shareHeaders(accessKey: string) {
+  return accessKey.trim() ? { "X-Share-Key": accessKey.trim() } : {};
+}
+
+function readRecentRuns(shareID: string): Run[] {
+  try {
+    return JSON.parse(window.localStorage.getItem(`share-runs:${shareID}`) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentRun(shareID: string, run: Run, previous: Run[]) {
+  const next = [run, ...previous.filter((item) => item.id !== run.id)].slice(0, 12);
+  window.localStorage.setItem(`share-runs:${shareID}`, JSON.stringify(next));
+  return next;
 }

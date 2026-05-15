@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gentlemanhu/comfyui-deploy/go-api/internal/auth"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -24,6 +25,8 @@ type deploymentRecord struct {
 	ShareSlug         *string         `json:"share_slug"`
 	Description       *string         `json:"description"`
 	ShowcaseMedia     json.RawMessage `json:"showcase_media"`
+	AccessKey         *string         `json:"access_key,omitempty"`
+	AccessKeyEnabled  bool            `json:"access_key_enabled"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
 	MachineName       *string         `json:"machine_name,omitempty"`
@@ -171,10 +174,11 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 	var orgID sql.NullString
 	var shareSlug sql.NullString
 	var description sql.NullString
+	var accessKey sql.NullString
 	err := s.store.DB.QueryRowContext(r.Context(), `
 		SELECT d.id, d.user_id, d.org_id, d.workflow_id, d.workflow_version_id, d.machine_id, d.environment::text,
 		       d.share_slug, d.description, COALESCE(d.showcase_media, 'null'::jsonb), d.created_at, d.updated_at,
-		       w.name, COALESCE(v.workflow_api, '{}'::jsonb), u.name
+		       w.name, COALESCE(v.workflow_api, '{}'::jsonb), u.name, d.access_key
 		FROM comfyui_deploy.deployments d
 		JOIN comfyui_deploy.workflows w ON w.id = d.workflow_id
 		JOIN comfyui_deploy.workflow_versions v ON v.id = d.workflow_version_id
@@ -184,7 +188,7 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 		LIMIT 1
 	`, shareID).Scan(
 		&item.ID, &item.UserID, &orgID, &item.WorkflowID, &item.WorkflowVersionID, &item.MachineID, &item.Environment,
-		&shareSlug, &description, &item.ShowcaseMedia, &item.CreatedAt, &item.UpdatedAt, &workflowName, &item.WorkflowAPI, &ownerName,
+		&shareSlug, &description, &item.ShowcaseMedia, &item.CreatedAt, &item.UpdatedAt, &workflowName, &item.WorkflowAPI, &ownerName, &accessKey,
 	)
 	if notFoundOrInternal(w, err, "share not found") {
 		return
@@ -192,6 +196,13 @@ func (s *Server) getSharedDeployment(w http.ResponseWriter, r *http.Request) {
 	item.OrgID = ptrNullString(orgID)
 	item.ShareSlug = ptrNullString(shareSlug)
 	item.Description = ptrNullString(description)
+	item.AccessKeyEnabled = accessKey.Valid && strings.TrimSpace(accessKey.String) != ""
+	if user, ok := s.userFromRequest(r); ok && ownsDeploymentUser(user, item.UserID, item.OrgID) {
+		item.AccessKey = ptrNullString(accessKey)
+	} else if item.AccessKeyEnabled && !shareAccessAllowed(r, accessKey.String) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "share access key required", "access_required": true})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deployment":    item,
 		"workflow_name": workflowName,
@@ -203,9 +214,15 @@ func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description   string          `json:"description"`
 		ShowcaseMedia json.RawMessage `json:"showcase_media"`
+		AccessKey     *string         `json:"access_key"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	user, ok := s.userFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Invalid or expired token"})
 		return
 	}
 	shareID := chi.URLParam(r, "share_id")
@@ -213,10 +230,12 @@ func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
 		UPDATE comfyui_deploy.deployments
 		SET description = $2,
 		    showcase_media = $3,
+		    access_key = CASE WHEN $4::text IS NULL THEN access_key ELSE NULLIF($4::text, '') END,
 		    updated_at = now()
 		WHERE environment = 'public-share'
 		  AND (id::text = $1 OR share_slug = $1)
-	`, shareID, nullString(req.Description), jsonOrNull(req.ShowcaseMedia))
+		  AND (($5::text <> '' AND org_id = $5) OR ($5::text = '' AND user_id = $6 AND org_id IS NULL))
+	`, shareID, nullString(req.Description), jsonOrNull(req.ShowcaseMedia), req.AccessKey, user.OrgID, user.UserID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -225,7 +244,11 @@ func (s *Server) updateShareSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteShareSettings(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
+	user, ok := s.userFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Invalid or expired token"})
+		return
+	}
 	shareID := chi.URLParam(r, "share_id")
 	res, err := s.store.DB.ExecContext(r.Context(), `
 		DELETE FROM comfyui_deploy.deployments
@@ -246,8 +269,16 @@ func (s *Server) deleteShareSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cloneSharedWorkflow(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
+	user, ok := s.userFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Invalid or expired token"})
+		return
+	}
 	shareID := chi.URLParam(r, "share_id")
+	if !s.shareAccessAllowedByID(r, shareID) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "share access key required", "access_required": true})
+		return
+	}
 	var workflowID string
 	var workflowName string
 	var workflowRaw json.RawMessage
@@ -290,8 +321,16 @@ func (s *Server) cloneSharedWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cloneSharedMachine(w http.ResponseWriter, r *http.Request) {
-	user := currentUser(r)
+	user, ok := s.userFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Invalid or expired token"})
+		return
+	}
 	shareID := chi.URLParam(r, "share_id")
+	if !s.shareAccessAllowedByID(r, shareID) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "share access key required", "access_required": true})
+		return
+	}
 	var item machineRecord
 	var orgID sql.NullString
 	var authToken sql.NullString
@@ -377,4 +416,44 @@ func slugify(value string) string {
 		return uuid.NewString()
 	}
 	return value
+}
+
+func shareAccessAllowed(r *http.Request, accessKey string) bool {
+	accessKey = strings.TrimSpace(accessKey)
+	if accessKey == "" {
+		return true
+	}
+	for _, value := range []string{
+		r.URL.Query().Get("key"),
+		r.URL.Query().Get("access_key"),
+		r.Header.Get("X-Share-Key"),
+		r.Header.Get("X-Share-Access-Key"),
+	} {
+		if strings.TrimSpace(value) == accessKey {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) shareAccessAllowedByID(r *http.Request, shareID string) bool {
+	var accessKey sql.NullString
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		SELECT access_key
+		FROM comfyui_deploy.deployments
+		WHERE environment = 'public-share'
+		  AND (id::text = $1 OR share_slug = $1)
+		LIMIT 1
+	`, shareID).Scan(&accessKey)
+	if err != nil {
+		return false
+	}
+	return !accessKey.Valid || shareAccessAllowed(r, accessKey.String)
+}
+
+func ownsDeploymentUser(user auth.User, deploymentUserID string, deploymentOrgID *string) bool {
+	if user.OrgID != "" {
+		return deploymentOrgID != nil && *deploymentOrgID == user.OrgID
+	}
+	return deploymentOrgID == nil && deploymentUserID == user.UserID
 }

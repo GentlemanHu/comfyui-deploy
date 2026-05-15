@@ -35,6 +35,38 @@ func (s *Server) fetchDeployment(r *http.Request, deploymentID string) (deployme
 	return dep, nil
 }
 
+func (s *Server) fetchPublicShareDeployment(r *http.Request, shareID string) (deployment, error) {
+	var dep deployment
+	var orgID, machineOrgID, machineAuthToken nullableString
+	var workflow, workflowAPI, snapshot []byte
+	err := s.store.DB.QueryRowContext(r.Context(), `
+		SELECT
+			d.id, d.user_id, d.org_id, d.workflow_version_id, d.workflow_id, d.machine_id,
+			wv.workflow_id, wv.id, wv.workflow, wv.workflow_api, wv.snapshot, wv.version, wv.created_at, wv.updated_at,
+			m.id, m.user_id, m.org_id, m.name, m.endpoint, m.auth_token, m.type, m.disabled
+		FROM comfyui_deploy.deployments d
+		JOIN comfyui_deploy.workflow_versions wv ON wv.id = d.workflow_version_id
+		JOIN comfyui_deploy.machines m ON m.id = d.machine_id
+		WHERE d.environment = 'public-share'
+		  AND (d.id::text = $1 OR d.share_slug = $1)
+		LIMIT 1
+	`, shareID).Scan(
+		&dep.ID, &dep.UserID, &orgID, &dep.WorkflowVersionID, &dep.WorkflowID, &dep.MachineID,
+		&dep.Version.WorkflowID, &dep.Version.ID, &workflow, &workflowAPI, &snapshot, &dep.Version.Version, &dep.Version.CreatedAt, &dep.Version.UpdatedAt,
+		&dep.Machine.ID, &dep.Machine.UserID, &machineOrgID, &dep.Machine.Name, &dep.Machine.Endpoint, &machineAuthToken, &dep.Machine.Type, &dep.Machine.Disabled,
+	)
+	if err != nil {
+		return dep, err
+	}
+	dep.OrgID = orgID.ptr()
+	dep.Version.Workflow = scanRawMessage(workflow)
+	dep.Version.WorkflowAPI = scanRawMessage(workflowAPI)
+	dep.Version.Snapshot = scanRawMessage(snapshot)
+	dep.Machine.OrgID = machineOrgID.ptr()
+	dep.Machine.AuthToken = machineAuthToken.ptr()
+	return dep, nil
+}
+
 func (s *Server) fetchRunTarget(r *http.Request, workflowVersionID string, machineID string) (deployment, error) {
 	user := currentUser(r)
 	var dep deployment

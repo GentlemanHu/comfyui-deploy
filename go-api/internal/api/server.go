@@ -73,6 +73,9 @@ func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger
 			r.Post("/run", s.createRun)
 		})
 		r.Get("/share/{share_id}", s.getSharedDeployment)
+		r.Post("/share/{share_id}/run", s.createShareRun)
+		r.Get("/share/{share_id}/run/{run_id}", s.getShareRun)
+		r.Get("/share/{share_id}/run/{run_id}/outputs", s.getShareRunOutputs)
 		r.Post("/share/{share_id}/clone-workflow", s.cloneSharedWorkflow)
 		r.Post("/share/{share_id}/clone-machine", s.cloneSharedMachine)
 		r.Patch("/share/{share_id}/settings", s.updateShareSettings)
@@ -149,6 +152,28 @@ func currentUser(r *http.Request) auth.User {
 	return user
 }
 
+func (s *Server) userFromRequest(r *http.Request) (auth.User, bool) {
+	if user := currentUser(r); user.UserID != "" {
+		return user, true
+	}
+	if user, ok := s.basicAuthUser(r); ok {
+		return user, true
+	}
+	token := auth.BearerToken(r)
+	if token == "" {
+		return auth.User{}, false
+	}
+	user, err := auth.Parse(s.cfg.JWTSecret, token)
+	if err != nil {
+		return auth.User{}, false
+	}
+	revoked, err := s.isRevokedAPIKey(r.Context(), token)
+	if err != nil || revoked {
+		return auth.User{}, false
+	}
+	return user, true
+}
+
 func (s *Server) isRevokedAPIKey(ctx context.Context, token string) (bool, error) {
 	var revoked bool
 	err := s.store.DB.QueryRowContext(ctx, `SELECT revoked FROM comfyui_deploy.api_keys WHERE key = $1`, token).Scan(&revoked)
@@ -161,7 +186,7 @@ func (s *Server) isRevokedAPIKey(ctx context.Context, token string) (bool, error
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Share-Key, X-Share-Access-Key")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

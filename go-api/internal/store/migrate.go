@@ -43,6 +43,10 @@ func (s *Store) Migrate(ctx context.Context) error {
 		`ALTER TABLE comfyui_deploy.deployments ADD COLUMN IF NOT EXISTS share_slug text UNIQUE`,
 		`ALTER TABLE comfyui_deploy.deployments ADD COLUMN IF NOT EXISTS description text`,
 		`ALTER TABLE comfyui_deploy.deployments ADD COLUMN IF NOT EXISTS showcase_media jsonb`,
+		`ALTER TABLE comfyui_deploy.deployments ADD COLUMN IF NOT EXISTS access_key text`,
+		`ALTER TABLE comfyui_deploy.workflow_runs ADD COLUMN IF NOT EXISTS progress double precision`,
+		`ALTER TABLE comfyui_deploy.workflow_runs ADD COLUMN IF NOT EXISTS current_node text`,
+		`ALTER TABLE comfyui_deploy.workflow_runs ADD COLUMN IF NOT EXISTS live_status jsonb`,
 	}
 	for _, statement := range statements {
 		if _, err := s.DB.ExecContext(ctx, statement); err != nil {

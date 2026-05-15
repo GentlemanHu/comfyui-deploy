@@ -47,7 +47,10 @@ const endpoints: EndpointDoc[] = [
   { method: "GET", path: "/api/api-keys", auth: "Bearer API Key or Basic Auth", purpose: "List API keys.", response: `[{"id":"uuid","name":"Key","masked_key":"****abcd"}]` },
   { method: "POST", path: "/api/api-keys", auth: "Bearer API Key or Basic Auth", purpose: "Create an API key.", request: `{"name":"My API Key"}`, response: `{"id":"uuid","key":"jwt"}` },
   { method: "GET", path: "/api/doc", auth: "No Bearer required", purpose: "OpenAPI-style JSON for tooling and AI agents.", response: `{"openapi":"3.0.0","paths":{...}}` },
-  { method: "GET", path: "/api/share/<share_id>", auth: "Public", purpose: "Get public share page data.", response: `{"workflow_name":"Workflow","deployment":{...}}` },
+  { method: "GET", path: "/api/share/<share_id>", auth: "Public / X-Share-Key", purpose: "Get public share page data.", response: `{"workflow_name":"Workflow","deployment":{"access_key_enabled":true}}` },
+  { method: "POST", path: "/api/share/<share_id>/run", auth: "Public / X-Share-Key", purpose: "Run a public share without a Bearer API key.", request: `{"inputs":{}}`, response: `{"run_id":"uuid"}` },
+  { method: "GET", path: "/api/share/<share_id>/run/<run_id>", auth: "Public / X-Share-Key", purpose: "Poll public-share run status, progress, current node, and live status.", response: `{"id":"uuid","status":"running","progress":80,"current_node":"VAEDecode"}` },
+  { method: "GET", path: "/api/share/<share_id>/run/<run_id>/outputs", auth: "Public / X-Share-Key", purpose: "List public-share staged outputs.", response: `[{"id":"uuid","data":{"images":[]}}]` },
   { method: "POST", path: "/api/update-run", auth: "Internal callback", purpose: "ComfyUI/plugin callback for status, logs, live status, and staged output rows.", request: `{"run_id":"uuid","status":"running","output_data":{},"node_meta":{}}`, response: `{"message":"success"}` },
   { method: "GET", path: "/api/file-upload", auth: "Internal callback", purpose: "ComfyUI/plugin callback helper for output file signed PUT URLs.", request: `?file_name=out.webp&run_id=uuid&type=image/webp`, response: `{"url":"https://...","include_acl":true}` },
 ];
