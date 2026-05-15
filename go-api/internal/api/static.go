@@ -34,7 +34,7 @@ func (s *Server) authorizeStatic(w http.ResponseWriter, r *http.Request) bool {
 	if strings.TrimSpace(s.cfg.LocalAuthPassword) == "" {
 		return true
 	}
-	if strings.HasPrefix(r.URL.Path, "/share/") {
+	if isPublicStaticPath(r.URL.Path) {
 		return true
 	}
 	if _, ok := s.basicAuthUser(r); ok {
@@ -43,4 +43,21 @@ func (s *Server) authorizeStatic(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("WWW-Authenticate", `Basic realm="ComfyDeploy"`)
 	http.Error(w, "Authorization required", http.StatusUnauthorized)
 	return false
+}
+
+func isPublicStaticPath(path string) bool {
+	if strings.HasPrefix(path, "/share/") {
+		return true
+	}
+	for _, prefix := range []string{"/assets/", "/example-workflows/"} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	switch path {
+	case "/favicon.ico", "/robots.txt", "/manifest.webmanifest":
+		return true
+	default:
+		return false
+	}
 }
