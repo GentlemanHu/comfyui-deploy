@@ -59,20 +59,38 @@ function App() {
   const workflowMatch = path.match(/^\/workflows\/([^/]+)$/);
   const machineMatch = path.match(/^\/machines\/([^/]+)$/);
 
-  if (grantMatch) return <AuthRequest requestID={decodeURIComponent(grantMatch[1])} />;
-  if (shareSettingsMatch) return <Shell><ShareSettings shareID={decodeURIComponent(shareSettingsMatch[1])} /></Shell>;
-  if (shareMatch) return <SharePage shareID={decodeURIComponent(shareMatch[1])} />;
-  if (workflowMatch) return <Shell><WorkflowDetail workflowID={decodeURIComponent(workflowMatch[1])} /></Shell>;
-  if (machineMatch) return <Shell><MachineDetail machineID={decodeURIComponent(machineMatch[1])} /></Shell>;
-  if (["/examples", "/docs", "/docs/install", "/docs/endpoints"].includes(path)) return <Shell><DocsPage path={path === "/docs" ? "/docs/install" : path} /></Shell>;
-  if (path === "/stats") return <Shell><StatsPage /></Shell>;
-  if (path === "/machines") return <Shell><MachinesPage /></Shell>;
-  if (path === "/api-keys") return <Shell><APIKeysPage /></Shell>;
-  if (path === "/") return <Shell><HomePage /></Shell>;
-  return <Shell><WorkflowsPage /></Shell>;
+  let page: React.ReactNode;
+  if (grantMatch) page = <AuthRequest requestID={decodeURIComponent(grantMatch[1])} />;
+  else if (shareSettingsMatch) page = <Shell><ShareSettings shareID={decodeURIComponent(shareSettingsMatch[1])} /></Shell>;
+  else if (shareMatch) page = <SharePage shareID={decodeURIComponent(shareMatch[1])} />;
+  else if (workflowMatch) page = <Shell><WorkflowDetail workflowID={decodeURIComponent(workflowMatch[1])} /></Shell>;
+  else if (machineMatch) page = <Shell><MachineDetail machineID={decodeURIComponent(machineMatch[1])} /></Shell>;
+  else if (["/examples", "/docs", "/docs/install", "/docs/endpoints"].includes(path)) page = <Shell><DocsPage path={path === "/docs" ? "/docs/install" : path} /></Shell>;
+  else if (path === "/stats") page = <Shell><StatsPage /></Shell>;
+  else if (path === "/machines") page = <Shell><MachinesPage /></Shell>;
+  else if (path === "/api-keys") page = <Shell><APIKeysPage /></Shell>;
+  else if (path === "/") page = <Shell><HomePage /></Shell>;
+  else page = <Shell><WorkflowsPage /></Shell>;
+  return (
+    <>
+      {page}
+      <Toaster richColors />
+    </>
+  );
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    let active = true;
+    fetch("/api/session", { credentials: "include" }).then((response) => {
+      if (active && response.status === 401) {
+        window.location.assign(window.location.pathname + window.location.search);
+      }
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
   return (
     <TooltipProvider>
       <main className="w-full flex min-h-[100dvh] flex-col items-center justify-start">
@@ -83,7 +101,6 @@ function Shell({ children }: { children: React.ReactNode }) {
           <Navbar />
         </div>
         <div className="md:px-10 px-6 w-full h-[calc(100dvh-73px)]">{children}</div>
-        <Toaster richColors />
       </main>
     </TooltipProvider>
   );
