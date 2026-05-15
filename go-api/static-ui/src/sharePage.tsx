@@ -6,7 +6,7 @@ import { MediaPreviewGrid, extractMediaItems } from "./components/MediaPreview";
 import { Button } from "./components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { Input } from "./components/ui/input";
-import { getInputsFromWorkflow, getDefaultInputValues, type ExternalInputDefinition } from "./lib/externalInputs";
+import { fileToRunInput, getInputsFromWorkflow, getDefaultInputValues, type ExternalInputDefinition } from "./lib/externalInputs";
 import { getRelativeTime } from "./lib/getRelativeTime";
 
 type ShareData = {
@@ -195,7 +195,7 @@ export function SharePage({ shareID }: { shareID: string }) {
 }
 
 function ShareRunForm({ shareID, accessKey, inputs, activeRun, onStarted }: { deploymentID: string; shareID: string; accessKey: string; inputs: ExternalInputDefinition[]; activeRun: boolean; onStarted: (runID: string) => void }) {
-  const [values, setValues] = useState<Record<string, string | number | boolean>>(() => getDefaultInputValues(inputs));
+  const [values, setValues] = useState<Record<string, any>>(() => getDefaultInputValues(inputs));
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
@@ -212,6 +212,25 @@ function ShareRunForm({ shareID, accessKey, inputs, activeRun, onStarted }: { de
               <input type="checkbox" checked={Boolean(values[item.input_id])} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.checked }))} />
               <span>Enabled</span>
             </label>
+          ) : item.value_type === "file" ? (
+            <div className="grid gap-2">
+              <Input
+                type="file"
+                accept={item.accept}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setValues((prev) => ({ ...prev, [item.input_id]: { filename: file.name, mime_type: file.type, uploading: true } }));
+                  try {
+                    const value = await fileToRunInput(file);
+                    setValues((prev) => ({ ...prev, [item.input_id]: value }));
+                  } catch (error) {
+                    toast.error(String(error));
+                  }
+                }}
+              />
+              {values[item.input_id]?.filename ? <div className="truncate text-xs text-muted-foreground">{values[item.input_id].filename}</div> : null}
+            </div>
           ) : item.value_type === "enum" && item.options?.length ? (
             <select className="h-10 rounded-md border bg-background px-3" value={String(values[item.input_id] ?? "")} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.value }))}>
               {item.options.map((option) => <option key={option} value={option}>{option}</option>)}

@@ -55,13 +55,18 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		}
 		origin = normalizeRunOrigin(req.RunOrigin, "manual")
 	}
-	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, req.Inputs)
+	runID := uuid.NewString()
+	inputs, err := s.normalizeRunInputs(r, runID, dep.Version.WorkflowAPI, req.Inputs)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, inputs)
 	if dep.Machine.Type == "classic" && !isFullWorkflowGraph(dep.Version.Workflow) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: "This workflow version does not contain a full ComfyUI graph. Open it in ComfyUI and deploy a new version before running it on a Classic Machine."})
 		return
 	}
-	runID := uuid.NewString()
-	inputsRaw, _ := json.Marshal(req.Inputs)
+	inputsRaw, _ := json.Marshal(inputs)
 	_, err = s.store.DB.ExecContext(r.Context(), `
 		INSERT INTO comfyui_deploy.workflow_runs
 			(id, workflow_id, workflow_version_id, workflow_inputs, machine_id, origin)
@@ -96,13 +101,18 @@ func (s *Server) createShareRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, apiError{Error: "share not found"})
 		return
 	}
-	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, req.Inputs)
+	runID := uuid.NewString()
+	inputs, err := s.normalizeRunInputs(r, runID, dep.Version.WorkflowAPI, req.Inputs)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	workflowAPI := applyExternalInputs(dep.Version.WorkflowAPI, inputs)
 	if dep.Machine.Type == "classic" && !isFullWorkflowGraph(dep.Version.Workflow) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: "This workflow version does not contain a full ComfyUI graph."})
 		return
 	}
-	runID := uuid.NewString()
-	inputsRaw, _ := json.Marshal(req.Inputs)
+	inputsRaw, _ := json.Marshal(inputs)
 	_, err = s.store.DB.ExecContext(r.Context(), `
 		INSERT INTO comfyui_deploy.workflow_runs
 			(id, workflow_id, workflow_version_id, workflow_inputs, machine_id, origin)

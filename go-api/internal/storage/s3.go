@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 type S3 struct {
 	cfg    config.Config
+	base   *s3.Client
 	client *s3.PresignClient
 }
 
@@ -24,7 +26,7 @@ func NewS3(cfg config.Config) *S3 {
 		Credentials:  credentials.NewStaticCredentialsProvider(cfg.SpacesKey, cfg.SpacesSecret, ""),
 		UsePathStyle: cfg.SpacesForcePathStyle,
 	})
-	return &S3{cfg: cfg, client: s3.NewPresignClient(base)}
+	return &S3{cfg: cfg, base: base, client: s3.NewPresignClient(base)}
 }
 
 func (s *S3) PresignPut(ctx context.Context, key, contentType string, public bool) (string, error) {
@@ -52,6 +54,21 @@ func (s *S3) PresignGet(ctx context.Context, key string, expires time.Duration) 
 		return "", err
 	}
 	return s.replaceCDN(result.URL), nil
+}
+
+func (s *S3) PutObject(ctx context.Context, key, contentType string, body []byte, public bool) error {
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(s.cfg.SpacesBucket),
+		Key:           aws.String(key),
+		Body:          bytes.NewReader(body),
+		ContentLength: aws.Int64(int64(len(body))),
+		ContentType:   aws.String(contentType),
+	}
+	if public {
+		input.ACL = "public-read"
+	}
+	_, err := s.base.PutObject(ctx, input)
+	return err
 }
 
 func (s *S3) PublicURL(key string) string {

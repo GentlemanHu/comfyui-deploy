@@ -9,7 +9,7 @@ import { ScrollArea } from "./components/ui/scroll-area";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { useResource } from "./hooks";
-import { getInputsFromWorkflow, type ExternalInputDefinition } from "./lib/externalInputs";
+import { fileToRunInput, getInputsFromWorkflow, type ExternalInputDefinition } from "./lib/externalInputs";
 import { getRelativeTime } from "./lib/getRelativeTime";
 import { RunsTable } from "./workflowRuns";
 import { WorkflowStatsPanel } from "./workflowStats";
@@ -196,7 +196,7 @@ function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflow
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const inputs = useMemo(() => getInputsFromWorkflow((workflowVersion?.workflow_api as Record<string, any>) || undefined), [workflowVersion]);
-  const [values, setValues] = useState<Record<string, string | number | boolean>>({});
+  const [values, setValues] = useState<Record<string, any>>({});
   const canRun = Boolean(workflowVersion?.id && machineID);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -240,7 +240,7 @@ function RunWorkflowButton({ workflowVersion, machineID, onCreated }: { workflow
   );
 }
 
-function InputField({ item, values, setValues }: { item: ExternalInputDefinition; values: Record<string, string | number | boolean>; setValues: Dispatch<SetStateAction<Record<string, string | number | boolean>>> }) {
+function InputField({ item, values, setValues }: { item: ExternalInputDefinition; values: Record<string, any>; setValues: Dispatch<SetStateAction<Record<string, any>>> }) {
   return (
     <div className="grid gap-2">
       <div className="text-sm font-medium">{item.display_name || item.input_id}</div>
@@ -249,6 +249,26 @@ function InputField({ item, values, setValues }: { item: ExternalInputDefinition
           <input type="checkbox" checked={Boolean(values[item.input_id] ?? item.default_value ?? false)} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.checked }))} />
           <span>Enabled</span>
         </label>
+      ) : item.value_type === "file" ? (
+        <div className="grid gap-2">
+          <input
+            className="h-10 rounded-md border bg-background px-3 py-2 text-sm"
+            type="file"
+            accept={item.accept}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setValues((prev) => ({ ...prev, [item.input_id]: { filename: file.name, mime_type: file.type, uploading: true } }));
+              try {
+                const value = await fileToRunInput(file);
+                setValues((prev) => ({ ...prev, [item.input_id]: value }));
+              } catch (error) {
+                toast.error(String(error));
+              }
+            }}
+          />
+          {values[item.input_id]?.filename ? <div className="truncate text-xs text-muted-foreground">{values[item.input_id].filename}</div> : null}
+        </div>
       ) : item.value_type === "enum" && item.options?.length ? (
         <select className="h-10 rounded-md border bg-background px-3" value={String(values[item.input_id] ?? item.default_value ?? item.options[0] ?? "")} onChange={(e) => setValues((prev) => ({ ...prev, [item.input_id]: e.target.value }))}>
           {item.options.map((option) => <option key={option} value={option}>{option}</option>)}
