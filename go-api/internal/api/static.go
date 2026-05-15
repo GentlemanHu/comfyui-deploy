@@ -37,7 +37,11 @@ func (s *Server) authorizeStatic(w http.ResponseWriter, r *http.Request) bool {
 	if isPublicStaticPath(r.URL.Path) {
 		return true
 	}
-	if _, ok := s.basicAuthUser(r); ok {
+	if _, ok := s.localSessionUser(r); ok {
+		return true
+	}
+	if user, ok := s.basicAuthUser(r); ok {
+		s.setLocalSessionCookie(w, r, user)
 		return true
 	}
 	w.Header().Set("WWW-Authenticate", `Basic realm="ComfyDeploy"`)

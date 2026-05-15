@@ -2,24 +2,13 @@ import React, { type MouseEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster, toast } from "sonner";
 import { ArrowUpDown, Copy, Loader2, MoreHorizontal, Pencil, Plus, RefreshCcw } from "lucide-react";
-import {
-  ColumnDef,
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { ColumnDef, ColumnFiltersState, SortingState, VisibilityState, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import { api, APIKey, Deployment, Machine, navigate, Run, WorkflowItem, WorkflowVersion } from "./api";
 import { useResource } from "./hooks";
-import { Navbar } from "./components/Navbar";
 import { AuthRequest } from "./authRequest";
 import { DocsPage } from "./docsPage";
 import { MachineDetail } from "./machineDetail";
+import { Shell } from "./components/Shell";
 import { SharePage } from "./sharePage";
 import { ShareSettings } from "./shareSettings";
 import { StatsPage } from "./statsPage";
@@ -35,7 +24,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Textarea } from "./components/ui/textarea";
-import { TooltipProvider } from "./components/ui/tooltip";
 import "./globals.css";
 
 const META = {
@@ -76,33 +64,6 @@ function App() {
       {page}
       <Toaster richColors />
     </>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    let active = true;
-    fetch("/api/session", { credentials: "include" }).then((response) => {
-      if (active && response.status === 401) {
-        window.location.assign(window.location.pathname + window.location.search);
-      }
-    }).catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, []);
-  return (
-    <TooltipProvider>
-      <main className="w-full flex min-h-[100dvh] flex-col items-center justify-start">
-        <div className="z-[-1] fixed h-full w-full bg-white">
-          <div className="absolute h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
-        </div>
-        <div className="sticky w-full h-18 flex items-center justify-between gap-4 p-4 border-b border-gray-200">
-          <Navbar />
-        </div>
-        <div className="md:px-10 px-6 w-full h-[calc(100dvh-73px)]">{children}</div>
-      </main>
-    </TooltipProvider>
   );
 }
 

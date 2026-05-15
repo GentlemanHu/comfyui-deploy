@@ -25,6 +25,8 @@ type Server struct {
 	logger  *slog.Logger
 }
 
+const localSessionCookie = "comfydeploy_local_session"
+
 func New(cfg config.Config, st *store.Store, s3 *storage.S3, logger *slog.Logger) http.Handler {
 	s := &Server{cfg: cfg, store: st, storage: s3, logger: logger}
 	r := chi.NewRouter()
@@ -93,7 +95,12 @@ func (s *Server) requireBearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := auth.BearerToken(r)
 		if token == "" {
+			if user, ok := s.localSessionUser(r); ok {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
+				return
+			}
 			if user, ok := s.basicAuthUser(r); ok {
+				s.setLocalSessionCookie(w, r, user)
 				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userContextKey{}, user)))
 				return
 			}
@@ -156,6 +163,9 @@ func (s *Server) userFromRequest(r *http.Request) (auth.User, bool) {
 	if user := currentUser(r); user.UserID != "" {
 		return user, true
 	}
+	if user, ok := s.localSessionUser(r); ok {
+		return user, true
+	}
 	if user, ok := s.basicAuthUser(r); ok {
 		return user, true
 	}
@@ -172,6 +182,46 @@ func (s *Server) userFromRequest(r *http.Request) (auth.User, bool) {
 		return auth.User{}, false
 	}
 	return user, true
+}
+
+func (s *Server) localSessionUser(r *http.Request) (auth.User, bool) {
+	cookie, err := r.Cookie(localSessionCookie)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return auth.User{}, false
+	}
+	user, err := auth.Parse(s.cfg.JWTSecret, cookie.Value)
+	if err != nil {
+		return auth.User{}, false
+	}
+	if user.UserID != s.cfg.LocalAuthUserID || user.OrgID != s.cfg.LocalAuthOrgID {
+		return auth.User{}, false
+	}
+	return user, true
+}
+
+func (s *Server) setLocalSessionCookie(w http.ResponseWriter, r *http.Request, user auth.User) {
+	token, err := auth.Sign(s.cfg.JWTSecret, user, 7*24*time.Hour)
+	if err != nil {
+		s.logger.Error("sign local session", "error", err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     localSessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPSRequest(r),
+		Expires:  time.Now().Add(7 * 24 * time.Hour),
+		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
+	})
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func (s *Server) isRevokedAPIKey(ctx context.Context, token string) (bool, error) {
