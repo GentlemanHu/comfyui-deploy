@@ -20,12 +20,23 @@ function mediaPath(value: string) {
 }
 
 function mediaName(item: MediaItem, url: string) {
-  return item.filename || item.name || decodeURIComponent(url.split("/").pop()?.split("?")[0] || "output");
+  return item.filename || item.name || fileParamName(url) || decodeURIComponent(url.split("/").pop()?.split("?")[0] || "output");
+}
+
+function fileParamName(url: string) {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const file = parsed.searchParams.get("file");
+    if (!file) return "";
+    return decodeURIComponent(file).split("/").pop() || "";
+  } catch {
+    return "";
+  }
 }
 
 function itemType(item: MediaItem, url: string) {
   const explicit = `${item.mime_type || item.type || ""}`.toLowerCase();
-  const path = mediaPath(url || item.filename || item.name || "");
+  const path = mediaPath(item.filename || item.name || fileParamName(url) || url || "");
   if (explicit.startsWith("image/")) return "image";
   if (explicit.startsWith("video/")) return "video";
   if (explicit.startsWith("audio/")) return "audio";
